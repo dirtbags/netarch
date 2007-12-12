@@ -1,11 +1,71 @@
 #! /usr/bin/python
 
-import scapy
 import StringIO
+import struct
+import socket
 
-IP = scapy.IP
-TCP = scapy.TCP
-Raw = scapy.Raw
+def unpack(fmt, buf):
+    """Unpack buf based on fmt, assuming the rest is a string."""
+
+    size = struct.calcsize(fmt)
+    vals = struct.unpack(fmt, buf[:size])
+    return vals + (buf[size:],)
+
+def unpack_nybbles(byte):
+    return (byte >> 4, byte & 0x0F)
+
+class Frame:
+    def __init__(self, frame):
+        (self.eth_dhost,
+         self.eth_shost,
+         self.eth_type,
+         p) = unpack('!6s6sH', frame)
+        if self.eth_type != 0x0800:
+            raise ValueError('Not IP %04x' % self.eth_type)
+
+        (self.ihlvers,
+         self.tos,
+         self.tot_len,
+         self.id,
+         self.frag_off,
+         self.ttl,
+         self.protocol,
+         self.check,
+         self.saddr,
+         self.daddr,
+         p) = unpack("!BBHHHBBH4s4s", p)
+        if self.protocol != 6:
+            raise ValueError('Not TCP')
+
+        (self.th_sport,
+         self.th_dport,
+         self.th_seq,
+         self.th_ack,
+         x2off,
+         self.th_flags,
+         self.th_win,
+         self.th_sum,
+         self.th_urp,
+         p) = unpack("!HHLLBBHHH", p)
+        (th_off, th_x2) = unpack_nybbles(x2off)
+        opt_length = th_off * 4
+
+        self.th_options = p[20:opt_length]
+        payload = p[opt_length:self.tot_len - 40]
+
+        self.src = (self.saddr, self.th_sport)
+        self.dst = (self.daddr, self.th_dport)
+        self.seq = self.th_seq
+        self.ack = self.th_ack
+        self.payload = payload
+
+        self.saddr = socket.inet_ntoa(self.saddr)
+        self.daddr = socket.inet_ntoa(self.daddr)
+
+    def __repr__(self):
+        return '<Frame %s:%d -> %s:%d len %d>' % (self.saddr, self.th_sport,
+                                                  self.daddr, self.th_dport,
+                                                  len(self.payload))
 
 
 class DropStringIO(StringIO.StringIO):
@@ -57,33 +117,37 @@ class TCP_Session:
         self.read_handshake()
 
     def read_packet(self):
-        p = self.pc.read()
-        if not p:
-            return
-        return scapy.Ether(p[1])
+        while True:
+            p = self.pc.read()
+            if not p:
+                return
+            try:
+                return Frame(p[1])
+            except ValueError:
+                raise
 
     def read_handshake(self):
         # Read SYN
         pkt = self.read_packet()
-        assert (pkt[TCP].flags == 2) # XXX: There's got to be a better way
-        self.cli = (pkt[IP].src, pkt.sport)
-        self.srv = (pkt[IP].dst, pkt.dport)
+        assert (pkt.th_flags == 2) # XXX: There's got to be a better way
+        self.cli = pkt.src
+        self.srv = pkt.dst
         self.seq[0] = pkt.seq + 1
 
         # Read SYN-ACK
         while True:
             pkt = self.read_packet()
-            if ((pkt[IP].src == self.srv[0]) and
-                (pkt[TCP].flags == 18)):
-                self.seq[1] = pkt.seq + 1
+            if ((pkt.src == self.srv) and
+                (pkt.th_flags == 18)):
+                self.seq[1] = pkt.th_seq + 1
                 break
 
         # Read ACK
         while True:
             pkt = self.read_packet()
-            if ((pkt[IP].src == self.cli[0]) and
-                (pkt[TCP].flags == 16)):
-                assert (self.seq[0] == pkt.seq)
+            if ((pkt.src == self.cli) and
+                (pkt.th_flags == 16)):
+                assert (self.seq[0] == pkt.th_seq)
                 break
 
         self.frames = 3
@@ -96,30 +160,30 @@ class TCP_Session:
             self.frames += 1
 
             # Which way is this going?
-            idx = int(pkt[IP].src == self.srv[0])
+            idx = int(pkt.src == self.srv)
             xdi = 1 - idx
 
             # Does this ACK after the last output sequence number?
-            if pkt.ack > self.seq[xdi]:
+            if pkt.th_ack > self.seq[xdi]:
                 pending = self.pending[xdi]
                 seq = self.seq[xdi]
                 ret = DropStringIO()
                 keys = pending.keys()
                 for key in keys:
-                    if key >= pkt.ack:
+                    if key >= pkt.th_ack:
                         continue
 
                     pkt2 = pending[key]
                     del pending[key]
 
-                    ret.seek(pkt2.seq - seq)
-                    ret.write(pkt2[TCP][Raw].load)
-                self.seq[xdi] = pkt.ack
+                    ret.seek(pkt2.th_seq - seq)
+                    ret.write(pkt2.payload)
+                self.seq[xdi] = pkt.th_ack
 
                 yield (xdi, ret.getvalue())
 
             # If it has a payload, stick it into pending
-            if hasattr(pkt[TCP][Raw], 'load'):
+            if pkt.payload:
                 self.pending[idx][pkt.seq] = pkt
         self.done()
 
