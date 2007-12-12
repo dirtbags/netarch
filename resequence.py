@@ -16,6 +16,7 @@ def unpack_nybbles(byte):
 
 class Frame:
     def __init__(self, frame):
+        # Ethernet
         (self.eth_dhost,
          self.eth_shost,
          self.eth_type,
@@ -23,6 +24,7 @@ class Frame:
         if self.eth_type != 0x0800:
             raise ValueError('Not IP %04x' % self.eth_type)
 
+        # IP
         (self.ihlvers,
          self.tos,
          self.tot_len,
@@ -37,6 +39,7 @@ class Frame:
         if self.protocol != 6:
             raise ValueError('Not TCP')
 
+        # TCP
         (self.th_sport,
          self.th_dport,
          self.th_seq,
@@ -53,18 +56,26 @@ class Frame:
         self.th_options, p = p[:opt_length - 20], p[opt_length - 20:]
         payload = p[:self.tot_len - opt_length - 20]
 
+        # Nice formatting
         self.src = (self.saddr, self.th_sport)
         self.dst = (self.daddr, self.th_dport)
         self.seq = self.th_seq
         self.ack = self.th_ack
         self.payload = payload
 
-        self.saddr = socket.inet_ntoa(self.saddr)
-        self.daddr = socket.inet_ntoa(self.daddr)
+    def get_src_addr(self):
+        self.src_addr = socket.inet_ntoa(self.saddr)
+        return self.src_addr
+    src_addr = property(get_src_addr)
+
+    def get_dst_addr(self):
+        self.dst_addr = socket.inet_ntoa(self.daddr)
+        return self.dst_addr
+    dst_addr = property(get_dst_addr)
 
     def __repr__(self):
-        return '<Frame %s:%d -> %s:%d len %d>' % (self.saddr, self.th_sport,
-                                                  self.daddr, self.th_dport,
+        return '<Frame %s:%d -> %s:%d len %d>' % (self.src_addr, self.th_sport,
+                                                  self.drc_addr, self.th_dport,
                                                   len(self.payload))
 
 
