@@ -7,7 +7,6 @@ IP = scapy.IP
 TCP = scapy.TCP
 Raw = scapy.Raw
 
-drop_pad = 'DROP'
 
 class DropStringIO(StringIO.StringIO):
     """StringIO with different padding.
@@ -61,7 +60,7 @@ class TCP_Session:
         p = self.pc.read()
         if not p:
             return
-        return scapy.Ether(p[2])
+        return scapy.Ether(p[1])
 
     def read_handshake(self):
         # Read SYN
@@ -188,3 +187,25 @@ class HTTP_side:
         self.headers[k] = v
         if k.lower() == 'content-length':
             self.pending_data = int(v)
+
+
+def process_http(filename):
+    import pcap
+
+    pc = pcap.open(filename)
+    sess = TCP_Session(pc)
+
+    packets = []
+    current = [HTTP_side(), HTTP_side()]
+    for idx, chunk in sess:
+        c = current[idx]
+        while chunk:
+            chunk = c.process(chunk)
+            if c.complete:
+                packets.append((idx, c))
+
+                c = HTTP_side()
+                current[idx] = c
+
+    return packets
+
