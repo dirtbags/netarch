@@ -47,11 +47,11 @@ class Frame:
          self.th_sum,
          self.th_urp,
          p) = unpack("!HHLLBBHHH", p)
-        (th_off, th_x2) = unpack_nybbles(x2off)
-        opt_length = th_off * 4
+        (self.th_off, th_x2) = unpack_nybbles(x2off)
+        opt_length = self.th_off * 4
 
-        self.th_options = p[20:opt_length]
-        payload = p[opt_length:self.tot_len - 40]
+        self.th_options, p = p[:opt_length - 20], p[opt_length - 20:]
+        payload = p[:self.tot_len - opt_length - 20]
 
         self.src = (self.saddr, self.th_sport)
         self.dst = (self.daddr, self.th_dport)
@@ -120,11 +120,11 @@ class TCP_Session:
         while True:
             p = self.pc.read()
             if not p:
-                return
+                raise EOFError()
             try:
                 return Frame(p[1])
             except ValueError:
-                raise
+                pass
 
     def read_handshake(self):
         # Read SYN
@@ -154,8 +154,9 @@ class TCP_Session:
 
     def __iter__(self):
         while True:
-            pkt = self.read_packet()
-            if not pkt:
+            try:
+                pkt = self.read_packet()
+            except EOFError:
                 return
             self.frames += 1
 
