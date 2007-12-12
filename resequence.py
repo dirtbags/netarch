@@ -75,7 +75,7 @@ class Frame:
 
     def __repr__(self):
         return '<Frame %s:%d -> %s:%d len %d>' % (self.src_addr, self.th_sport,
-                                                  self.drc_addr, self.th_dport,
+                                                  self.dst_addr, self.th_dport,
                                                   len(self.payload))
 
 
