@@ -83,7 +83,7 @@ def bin(i):
     return s
 
 class bitvector:
-    def __init__(self, i, length=None):
+    def __init__(self, i=0, length=None):
         if type(i) == type(''):
             self._val = 0
             for c in i:
@@ -147,3 +147,31 @@ class bitvector:
         l.reverse()
         return '<bitvector ' + ''.join(str(x) for x in l) + '>'
 
+    def __add__(self, i):
+        if isinstance(i, bitvector):
+            l = len(self) + len(i)
+            v = (int(self) << len(i)) + int(i)
+            return bitvector(v, l)
+        else:
+            raise ValueError("Can't extend with this type yet")
+
+
+b64_chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+def esab64_decode(s):
+    """Little-endian version of base64"""
+
+    r = []
+    for i in range(0, len(s), 4):
+        v = bitvector()
+        for c in s[i:i+4]:
+            if c == '=':
+                break
+            v += bitvector(b64_chars.index(c), 6)
+
+        # Normal base64 would start at the beginning
+        b = (v[10:12] + v[ 0: 6] +
+             v[14:18] + v[ 6:10] +
+             v[18:24] + v[12:14])
+
+        r.append(str(b))
+    return ''.join(r)
