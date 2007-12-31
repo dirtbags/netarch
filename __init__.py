@@ -2,8 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import sys
+import struct
 
-printable = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*()[]{}`~/=\\?+|\',."<> '
+printable = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*()[]{}`~/=-\\?+|\',."<> '
 
 def unpack(fmt, buf):
     """Unpack buf based on fmt, return the rest as a string."""

@@ -213,6 +213,25 @@ def adds(txt):
     return ret
 
 
+class XorMask:
+    def __init__(self, mask):
+        self.offset = 0
+        if type(mask) == type(''):
+            self._mask = tuple(ord(m) for m in mask)
+        else:
+            self._mask = tuple(mask)
+
+    def mask(self, s, stick=False):
+        r = []
+        for c in s:
+            o = ord(c)
+            r.append(chr(o ^ self._mask[self.offset]))
+            self.offset = (self.offset + 1) % len(self._mask)
+        if not stick:
+            self.offset = 0
+        return ''.join(r)
+
+
 ##
 ## Grep-like things within dictionary
 ##

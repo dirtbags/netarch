@@ -16,8 +16,8 @@ def unpack_nybbles(byte):
     return (byte >> 4, byte & 0x0F)
 
 ICMP = 1
-TCP = 6
-UDP = 17
+TCP  = 6
+UDP  = 17
 
 class Frame:
     """Turn an ethernet frame into relevant TCP parts"""
@@ -86,6 +86,8 @@ class Frame:
         # Nice formatting
         self.src = (self.saddr, self.sport)
         self.dst = (self.daddr, self.dport)
+
+        # This hash is the same for both sides of the transaction
         self.hash = (self.saddr ^ self.sport ^ self.daddr ^ self.dport)
 
     def get_src_addr(self):
@@ -101,40 +103,84 @@ class Frame:
     dst_addr = property(get_dst_addr)
 
     def __repr__(self):
-        return '<Frame %s %s:%d -> %s:%d len %d>' % (self.name,
-                                                     self.src_addr, self.sport,
-                                                     self.dst_addr, self.dport,
-                                                     len(self.payload))
+        return '<Frame %s %s:%d -> %s:%d length %d>' % (self.name,
+                                                        self.src_addr, self.sport,
+                                                        self.dst_addr, self.dport,
+                                                        len(self.payload))
 
 
-class DropStringIO(StringIO.StringIO):
-    """StringIO with different padding.
+class Chunk:
+    """Chunk of frames, possibly with gaps.
 
-    If you write beyond the length of the current string, this pads with
-    the string 'Drop', and not NULs.  This should make it more obvious
-    that you've had a drop.  I hope.
+    Currently, gaps show up as a string of 0x33, ascii '3'.
 
     """
 
-    padstr = 'Drop'
+    def __init__(self, seq, drop='3'):
+        # chr(0x33) == '3'.  If you see a bunch of 3s, in the ascii or
+        # the hex view, suspect a drop.
+        assert len(drop) == 1, "Don't yet support len(drop) > 1"
+        self.drop = drop
+        self.collection = {}
+        self.length = 0
+        self.seq = seq
+        self.first = None
 
-    def write(self, s):
-        if self.pos > self.len:
-            bytes = self.pos - self.len
-            pad = self.padstr * ((bytes / len(self.padstr)) + 1)
-            self.buflist.append(pad[:bytes])
-            self.len = self.pos
-        return StringIO.StringIO.write(self, s)
+    def add(self, frame):
+        assert frame.seq >= self.seq, (frame.seq, self.seq)
+        if not self.first:
+            self.first = frame
+        self.collection[frame.seq] = frame
+        end = frame.seq - self.seq + len(frame.payload)
+        self.length = max(self.length, long(end))
+
+    def __len__(self):
+        return int(self.length)
+
+    def __repr__(self):
+        if self.first:
+            return '<Chunk %s:%d -> %s:%d length %d>' % (self.first.src_addr,
+                                                         self.first.sport,
+                                                         self.first.dst_addr,
+                                                         self.first.dport,
+                                                         len(self))
+        else:
+            return '<Chunk (no frames)>'
+
+    def __str__(self):
+        s = ''
+        while len(s) < self.length:
+            f = self.collection.get(self.seq + len(s))
+            if f:
+                s += f.payload
+            else:
+                # This is where to fix it for len(drop) > 1.
+                # This is also where to fix big inefficiency for dropped packets.
+                s += self.drop
+        return s
+
+    def __add__(self, next):
+        new = Chunk(self.seq, self.drop)
+        for frame in self.collection.itervalues():
+            new.add(frame)
+        for frame in next.collection.itervalues():
+            new.add(frame)
+        return new
 
 
 class TCP_Session:
-    """Iterable TCP session resequencer.
+    """TCP session resequencer.
 
-    You initialize it with something with a read() method that returns a
-    new ethernet frame.  For instance, an object from my py-pcap module.
-
-    The read() method returns (srv, chunk), where srv is 1 if this came
-    from the server, and chunk is a chunk of data.
+    >>> p = pcap.open('whatever.pcap')
+    >>> s = TCP_Session()
+    >>> while True:
+    ...     pkt = p.read()
+    ...     if not pkt:
+    ...         break
+    ...     f = Frame(pkt)
+    ...     r = s.handle(f)
+    ...     if r:
+    ...         print ('chunk', r)
 
     This returns things in sequence.  So you get both sides of the
     conversation in the order that they happened.
@@ -176,11 +222,11 @@ class TCP_Session:
         elif pkt.flags == 18:           # SYNACK
             assert (pkt.src == (self.srv or pkt.src))
             self.cli, self.srv = pkt.dst, pkt.src
-            self.seq = [pkt.ack + 1, pkt.seq + 1]
+            self.seq = [pkt.ack, pkt.seq + 1]
         elif pkt.flags == 16:           # ACK
             assert (pkt.src == (self.cli or pkt.src))
             self.cli, self.srv = pkt.src, pkt.dst
-            self.seq = [pkt.seq, pkt.ack + 1]
+            self.seq = [pkt.seq, pkt.ack]
             self.handle = self.handle_packet
         else:
             raise ValueError('Weird flags in handshake: %d' % pkt.flags)
@@ -195,22 +241,14 @@ class TCP_Session:
 
         # Does this ACK after the last output sequence number?
         if pkt.ack > self.seq[xdi]:
+            ret = Chunk(self.seq[xdi])
             pending = self.pending[xdi]
-            seq = self.seq[xdi]
-            ret = DropStringIO()
-            keys = pending.keys()
-            for key in keys:
+            for key in pending.keys():
                 if key >= pkt.ack:
                     continue
-
-                pkt2 = pending[key]
+                ret.add(pending[key])
                 del pending[key]
-
-                ret.seek(pkt2.seq - seq)
-                ret.write(pkt2.payload)
             self.seq[xdi] = pkt.ack
-
-            ret = (xdi, ret.getvalue())
 
         # If it has a payload, stick it into pending
         if pkt.payload:
@@ -289,6 +327,14 @@ class HTTP_side:
 
 
 def resequence(pc):
+    """Re-sequence from a pcap stream.
+
+    >>> p = pcap.open('whatever.pcap')
+    >>> for chunk in resequence(p):
+    ...    print `chunk`
+
+    """
+
     sessions = {}
     for pkt in pc:
         f = Frame(pkt)
@@ -298,9 +344,9 @@ def resequence(pc):
             if not s:
                 s = TCP_Session()
                 sessions[f.hash] = s
-            r = s.handle(f)
-            if r:
-                yield (f, r)
+            chunk = s.handle(f)
+            if chunk:
+                yield chunk
 
 
 def process_http(filename):
