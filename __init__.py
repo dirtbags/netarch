@@ -19,6 +19,10 @@ def to_printable(c):
         return c
     elif c == '\0':
         return '␀'
+    elif c == '\r':
+        return '␍'
+    elif c == '\n':
+        return '␤'
     else:
         return '·'
 

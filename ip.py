@@ -160,7 +160,8 @@ class Chunk:
         return s
 
     def __add__(self, next):
-        new = Chunk(self.seq, self.drop)
+        seq = min(self.seq, next.seq)
+        new = Chunk(seq, self.drop)
         for frame in self.collection.itervalues():
             new.add(frame)
         for frame in next.collection.itervalues():
@@ -229,24 +230,30 @@ class TCP_Session:
             self.seq = [pkt.seq, pkt.ack]
             self.handle = self.handle_packet
         else:
-            raise ValueError('Weird flags in handshake: %d' % pkt.flags)
+            # In the middle of a session, do the best we can
+            self.cli, self.srv = pkt.src, pkt.dst
+            self.seq = [pkt.seq, pkt.ack]
+            self.handle = self.handle_packet
+            self.handle(pkt)
 
     def handle_packet(self, pkt):
         ret = None
         self.frames += 1
 
-        # Which way is this going?
+        # Which way is this going?  0 == from client
         idx = int(pkt.src == self.srv)
         xdi = 1 - idx
 
         # Does this ACK after the last output sequence number?
-        if pkt.ack > self.seq[xdi]:
-            ret = Chunk(self.seq[xdi])
+        seq = self.seq[xdi]
+        if pkt.ack > seq:
+            ret = Chunk(seq)
             pending = self.pending[xdi]
             for key in pending.keys():
                 if key >= pkt.ack:
                     continue
-                ret.add(pending[key])
+                if key >= seq:
+                    ret.add(pending[key])
                 del pending[key]
             self.seq[xdi] = pkt.ack
 
