@@ -78,8 +78,8 @@ class Frame:
              self.cheksum,
              self.id,
              self.seq,
-             p) = unpackt('!BBHHH', p)
-            self.payload = p[:self.tot-len - 8]
+             p) = unpack('!BBHHH', p)
+            self.payload = p[:self.tot_len - 8]
         else:
             raise ValueError('Unknown protocol')
 
@@ -169,6 +169,12 @@ class Chunk:
         return new
 
 
+FIN = 1
+SYN = 2
+RST = 4
+PSH = 8
+ACK = 16
+
 class TCP_Session:
     """TCP session resequencer.
 
@@ -218,13 +224,13 @@ class TCP_Session:
         if not self.first:
             self.first = pkt
 
-        if pkt.flags == 2:              # SYN
+        if pkt.flags == SYN:
             self.cli, self.srv = pkt.src, pkt.dst
-        elif pkt.flags == 18:           # SYNACK
+        elif pkt.flags == (SYN | ACK):
             assert (pkt.src == (self.srv or pkt.src))
             self.cli, self.srv = pkt.dst, pkt.src
             self.seq = [pkt.ack, pkt.seq + 1]
-        elif pkt.flags == 16:           # ACK
+        elif pkt.flags == ACK:
             assert (pkt.src == (self.cli or pkt.src))
             self.cli, self.srv = pkt.src, pkt.dst
             self.seq = [pkt.seq, pkt.ack]
@@ -254,6 +260,8 @@ class TCP_Session:
                     continue
                 if key >= seq:
                     ret.add(pending[key])
+                else:
+                    warnings.warn('Dropping %r from mid-stream session' % pending[key])
                 del pending[key]
             self.seq[xdi] = pkt.ack
 
@@ -262,12 +270,12 @@ class TCP_Session:
             self.pending[idx][pkt.seq] = pkt
 
         # Is it a FIN or RST?
-        if pkt.flags & 5:
+        if pkt.flags & (FIN | RST):
             self.closed += 1
             if self.closed == 2:
                 # Warn about any unhandled packets
                 if self.pending[0] or self.pending[1]:
-                    warnings.warn('Unhandled packets')
+                    warnings.warn('Dropping unhandled frames after shutdown' % pkt)
                 self.handle = self.handle_drop
 
         return ret
@@ -275,8 +283,8 @@ class TCP_Session:
     def handle_drop(self, pkt):
         """Warn about any unhandled packets"""
 
-        if not pkt.flags & 5:
-            warnings.warn('Extra packets at the end')
+        if pkt.payload:
+            warnings.warn('Spurious frame after shutdown: %r %d' % (pkt, pkt.flags))
 
 
 class HTTP_side:
