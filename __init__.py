@@ -87,7 +87,7 @@ def bin(i):
     s = ''.join(str(x) for x in r)
     return s
 
-class bitvector:
+class BitVector:
     def __init__(self, i=0, length=None):
         if type(i) == type(''):
             self._val = 0

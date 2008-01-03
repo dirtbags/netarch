@@ -214,21 +214,23 @@ def adds(txt):
 
 
 class XorMask:
-    def __init__(self, mask):
+    def __init__(self, mask, stick=False):
         self.offset = 0
         if type(mask) == type(''):
             self._mask = tuple(ord(m) for m in mask)
         else:
             self._mask = tuple(mask)
+        self.stick = stick
 
-    def mask(self, s, stick=False):
+    def __call__(self, s):
         r = []
+        offset = self.offset
         for c in s:
             o = ord(c)
-            r.append(chr(o ^ self._mask[self.offset]))
-            self.offset = (self.offset + 1) % len(self._mask)
-        if not stick:
-            self.offset = 0
+            r.append(chr(o ^ self._mask[offset]))
+            offset = (offset + 1) % len(self._mask)
+        if self.stick:
+            self.offset = offset
         return ''.join(r)
 
 
