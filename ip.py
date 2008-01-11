@@ -4,6 +4,8 @@ import StringIO
 import struct
 import socket
 import warnings
+import heapq
+
 
 def unpack(fmt, buf):
     """Unpack buf based on fmt, assuming the rest is a string."""
@@ -108,7 +110,6 @@ class Frame:
                                                         self.dst_addr, self.dport,
                                                         len(self.payload))
 
-
 class Chunk:
     """Chunk of frames, possibly with gaps.
 
@@ -116,7 +117,7 @@ class Chunk:
 
     """
 
-    def __init__(self, seq, drop='3'):
+    def __init__(self, seq=None, drop='3'):
         # chr(0x33) == '3'.  If you see a bunch of 3s, in the ascii or
         # the hex view, suspect a drop.
         assert len(drop) == 1, "Don't yet support len(drop) > 1"
@@ -127,9 +128,11 @@ class Chunk:
         self.first = None
 
     def add(self, frame):
-        assert frame.seq >= self.seq, (frame.seq, self.seq)
         if not self.first:
             self.first = frame
+            if self.seq is None:
+                self.seq = frame.seq
+        assert frame.seq >= self.seq, (frame.seq, self.seq)
         self.collection[frame.seq] = frame
         end = frame.seq - self.seq + len(frame.payload)
         self.length = max(self.length, long(end))
@@ -159,13 +162,15 @@ class Chunk:
                 s += self.drop
         return s
 
+    def extend(self, other):
+        self.seq = min(self.seq or other.seq, other.seq)
+        for frame in other.collection.itervalues():
+            self.add(frame)
+
     def __add__(self, next):
-        seq = min(self.seq, next.seq)
-        new = Chunk(seq, self.drop)
-        for frame in self.collection.itervalues():
-            new.add(frame)
-        for frame in next.collection.itervalues():
-            new.add(frame)
+        new = self.__class__(self.seq, self.drop)
+        new.extend(self)
+        new.extend(next)
         return new
 
 
@@ -175,11 +180,11 @@ RST = 4
 PSH = 8
 ACK = 16
 
-class TCP_Session:
+class TCP_Resequence:
     """TCP session resequencer.
 
     >>> p = pcap.open('whatever.pcap')
-    >>> s = TCP_Session()
+    >>> s = TCP_Resequence()
     >>> while True:
     ...     pkt = p.read()
     ...     if not pkt:
@@ -357,14 +362,37 @@ def resequence(pc):
             # compute TCP session hash
             s = sessions.get(f.hash)
             if not s:
-                s = TCP_Session()
+                s = TCP_Resequence()
                 sessions[f.hash] = s
             chunk = s.handle(f)
             if chunk:
                 yield chunk
 
+def demux(*pcs):
+    """Demultiplex pcap objects based on time.
+
+    This is iterable just like a pcap object, so you could for instance do:
+
+    >>> resequence(demux(pcap1, pcap2, pcap3))
+
+    """
+
+    tops = []
+    for pc in pcs:
+        frame = pc.read()
+        if frame:
+            heapq.heappush(tops, (frame, pc))
+
+    while tops:
+        frame, pc = heapq.heappop(tops)
+        yield frame
+        frame = pc.read()
+        if frame:
+            heapq.heappush(tops, (frame, pc))
+
 
 def process_http(filename):
+    # XXX: probably broken
     import pcap
 
     pc = pcap.open(filename)
