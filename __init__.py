@@ -10,47 +10,82 @@ def unpack(fmt, buf):
     """Unpack buf based on fmt, return the rest as a string."""
 
     size = struct.calcsize(fmt)
-    vals = struct.unpack(fmt, buf[:size])
+    vals = struct.unpack(fmt, str(buf[:size]))
     return vals + (buf[size:],)
 
 
-def to_printable(c):
-    if c in printable:
-        return c
-    elif c == '\0':
-        return '␀'
-    elif c == '\r':
-        return '␍'
-    elif c == '\n':
-        return '␤'
-    else:
-        return '·'
+class HexDumper:
+    def __init__(self, fd=sys.stdout):
+        self.fd = fd
+        self.offset = 0
+        self.buf = []
+
+    def _to_printable(self, c):
+        if not c:
+            return '◆'
+        elif c in printable:
+            return c
+        elif c == '\0':
+            return '␀'
+        elif c == '\r':
+            return '␍'
+        elif c == '\n':
+            return '␤'
+        else:
+            return '·'
+
+
+    def _flush(self):
+        if not self.buf:
+            return
+
+        o = []
+        for c in self.buf:
+            if c:
+                o.append('%02x' % ord(c))
+            else:
+                o.append('--')
+        o +=  (['  '] * (16 - len(self.buf)))
+        p = [self._to_printable(c) for c in self.buf]
+
+        self.fd.write('%08x  ' % self.offset)
+
+        self.fd.write(' '.join(o[:8]))
+        self.fd.write('  ')
+        self.fd.write(' '.join(o[8:]))
+
+        self.fd.write('  ║')
+
+        self.fd.write(''.join(p))
+
+        self.fd.write('║\n')
+
+        self.buf = []
+        self.offset += 16
+
+    def dump_chr(self, c):
+        self.buf.append(c)
+        if len(self.buf) == 16:
+            self._flush()
+
+    def dump_drop(self):
+        self.buf.append(None)
+        if len(self.buf) == 16:
+            self._flush()
+
+    def finish(self):
+        self._flush()
+        self.fd.write('%08x\n' % self.offset)
 
 
 def hexdump(buf, f=sys.stdout):
     "Print a hex dump of buf"
 
-    offset = 0
+    d = HexDumper()
 
-    while buf:
-        s = buf[:16]
-        o = [('%02x' % ord(c)) for c in s] + (['  '] * (16 - len(s)))
-        p = [to_printable(c) for c in s]
-
-        f.write('%08x  ' % offset)
-
-        f.write(' '.join(o[:8]))
-        f.write('  ')
-        f.write(' '.join(o[8:]))
-
-        f.write('  ║')
-
-        f.write(''.join(p))
-
-        f.write('║\n')
-
-        buf = buf[16:]
-        offset += 16
+    for c in buf:
+        d.dump_chr(c)
+    d.finish()
 
 
 def cstring(buf):

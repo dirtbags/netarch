@@ -5,6 +5,7 @@ import struct
 import socket
 import warnings
 import heapq
+import gapstr
 
 
 def unpack(fmt, buf):
@@ -110,18 +111,13 @@ class Frame:
                                                         self.dst_addr, self.dport,
                                                         len(self.payload))
 
+
 class Chunk:
     """Chunk of frames, possibly with gaps.
 
-    Currently, gaps show up as a string of 0x33, ascii '3'.
-
     """
 
-    def __init__(self, seq=None, drop='3'):
-        # chr(0x33) == '3'.  If you see a bunch of 3s, in the ascii or
-        # the hex view, suspect a drop.
-        assert len(drop) == 1, "Don't yet support len(drop) > 1"
-        self.drop = drop
+    def __init__(self, seq=None):
         self.collection = {}
         self.length = 0
         self.seq = seq
@@ -130,8 +126,8 @@ class Chunk:
     def add(self, frame):
         if not self.first:
             self.first = frame
-            if self.seq is None:
-                self.seq = frame.seq
+        if self.seq is None:
+            self.seq = frame.seq
         assert frame.seq >= self.seq, (frame.seq, self.seq)
         self.collection[frame.seq] = frame
         end = frame.seq - self.seq + len(frame.payload)
@@ -150,25 +146,35 @@ class Chunk:
         else:
             return '<Chunk (no frames)>'
 
-    def __str__(self):
-        s = ''
-        while len(s) < self.length:
-            f = self.collection.get(self.seq + len(s))
+    def gapstr(self, drop='?'):
+        """Return contents as a GapString"""
+
+        ret = gapstr.GapString(drop)
+        while len(ret) < self.length:
+            f = self.collection.get(self.seq + len(ret))
             if f:
-                s += f.payload
+                ret.append(f.payload)
             else:
-                # This is where to fix it for len(drop) > 1.
-                # This is also where to fix big inefficiency for dropped packets.
-                s += self.drop
-        return s
+                # This is where to fix big inefficiency for dropped packets.
+                l = 1
+                while ((len(ret) + l < self.length) and
+                       (not (self.seq + len(ret) + l) in self.collection)):
+                    l += 1
+                ret.append(l)
+        return ret
+
+    def __str__(self):
+        return str(self.gapstr())
 
     def extend(self, other):
         self.seq = min(self.seq or other.seq, other.seq)
-        for frame in other.collection.itervalues():
-            self.add(frame)
+        self.length = self.length + other.length
+        if not self.first:
+            self.first = other.first
+        self.collection.update(other.collection)
 
     def __add__(self, next):
-        new = self.__class__(self.seq, self.drop)
+        new = self.__class__(self.seq)
         new.extend(self)
         new.extend(next)
         return new

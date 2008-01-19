@@ -186,11 +186,10 @@ tabula_recta = caesars('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
 
 
 def xor(n, txt):
-    out = ''
-    for c in txt:
-        o = ord(c) ^ n
-        out += chr(o)
-    return out
+    if n == 0:
+        return txt
+    out = [(chr(ord(c) ^ n)) for c in txt]
+    return ''.join(out)
 
 def xors(txt):
     ret = []

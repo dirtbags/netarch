@@ -48,7 +48,7 @@ class GapString:
             else:
                 for c in i:
                     d.dump_chr(c)
-        d.flush()
+        d.finish()
 
     def extend(self, other):
         self.contents += other.contents
@@ -56,10 +56,14 @@ class GapString:
 
     def __getslice__(self, start, end):
         end = min(self.length, end)
+        start = min(self.length, start)
 
         new = self.__class__(self.drop)
         new.contents = self.contents[:]
         new.length = end - start
+        if new.length == 0:
+            return new
+
         l = self.length - new.length - start
 
         # Trim off the beginning
