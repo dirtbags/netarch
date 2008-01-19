@@ -15,6 +15,7 @@ class GapString:
         self.length = 0
         self.drop = drop
         if init:
+            print init
             self.append(init)
 
     def __len__(self):
@@ -98,7 +99,7 @@ class GapString:
         if isinstance(other, str):
             self.append(other)
         else:
-            new = self.__class__(self.drop)
+            new = self.__class__(drop=self.drop)
             new.extend(self)
             new.extend(other)
             return new
@@ -108,7 +109,7 @@ class GapString:
             mask = [mask]
         masklen = len(mask)
 
-        new = self.__class__(self.drop)
+        new = self.__class__(drop=self.drop)
         for i in self.contents:
             if isinstance(i, int):
                 new.append(i)
