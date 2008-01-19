@@ -149,7 +149,7 @@ class Chunk:
     def gapstr(self, drop='?'):
         """Return contents as a GapString"""
 
-        ret = gapstr.GapString(drop)
+        ret = gapstr.GapString(drop=drop)
         while len(ret) < self.length:
             f = self.collection.get(self.seq + len(ret))
             if f:
