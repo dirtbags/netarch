@@ -10,10 +10,12 @@ import __init__
 import sys
 
 class GapString:
-    def __init__(self, drop='?'):
+    def __init__(self, init=None, drop='?'):
         self.contents = []
         self.length = 0
         self.drop = drop
+        if init:
+            self.append(init)
 
     def __len__(self):
         return self.length
@@ -58,7 +60,7 @@ class GapString:
         end = min(self.length, end)
         start = min(self.length, start)
 
-        new = self.__class__(self.drop)
+        new = self.__class__(drop=self.drop)
         new.contents = self.contents[:]
         new.length = end - start
         if new.length == 0:
