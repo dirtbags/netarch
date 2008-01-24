@@ -6,7 +6,8 @@ import socket
 import warnings
 import heapq
 import gapstr
-
+import time
+import UserDict
 
 def unpack(fmt, buf):
     """Unpack buf based on fmt, assuming the rest is a string."""
@@ -17,6 +18,7 @@ def unpack(fmt, buf):
 
 def unpack_nybbles(byte):
     return (byte >> 4, byte & 0x0F)
+
 
 ICMP = 1
 TCP  = 6
@@ -298,60 +300,6 @@ class TCP_Resequence:
             warnings.warn('Spurious frame after shutdown: %r %d' % (pkt, pkt.flags))
 
 
-class HTTP_side:
-    """One side of an HTTP transaction."""
-
-    def __init__(self):
-        self.buf = ''
-        self.first = ''
-        self.in_headers = True
-        self.headers = {}
-        self.pending_data = 0
-        self.data = ''
-        self.complete = False
-
-    def __repr__(self):
-        return '<HTTP_side %r>' % self.first
-
-    def process(self, chunk):
-        """Returns any unprocessed part of the chunk, parts which go to
-        the next utterance."""
-
-        chunk = chunk + self.buf
-        while self.in_headers and chunk:
-            try:
-                line, chunk = chunk.split('\n', 1)
-            except ValueError:
-                self.buf = chunk
-                return ''
-            self.process_header_line(line)
-        self.buf = ''
-        if self.pending_data:
-            d = chunk[:self.pending_data]
-            chunk = chunk[self.pending_data:]
-            self.data += d
-            self.pending_data -= len(d) # May set to 0
-        if not self.pending_data:
-            self.complete = True
-        return chunk
-
-    def process_header_line(self, line):
-        if not line.strip():
-            self.in_headers = False
-            return
-        try:
-            k,v = line.split(':', 1)
-        except ValueError:
-            if self.first:
-                raise ValueError(('Not a header', line))
-            else:
-                self.first += line
-                return
-        self.headers[k] = v
-        if k.lower() == 'content-length':
-            self.pending_data = int(v)
-
-
 def resequence(pc):
     """Re-sequence from a pcap stream.
 
@@ -397,28 +345,150 @@ def demux(*pcs):
             heapq.heappush(tops, (frame, pc))
 
 
-def process_http(filename):
-    # XXX: probably broken
-    import pcap
 
-    pc = pcap.open(filename)
-    sess = TCP_Session(pc)
+##
+## Binary protocol stuff
+##
 
-    packets = []
-    current = [HTTP_side(), HTTP_side()]
-    for idx, chunk in sess:
-        c = current[idx]
-        while chunk:
-            chunk = c.process(chunk)
-            if c.complete:
-                packets.append((idx, c))
+class Packet(UserDict.DictMixin):
+    """Base class for a packet from a binary protocol.
 
-                c = HTTP_side()
-                current[idx] = c
+    This is a base class for making protocol reverse-engineering easier.
 
-    return packets
+    """
+
+    opcodes = {}
+
+    def __init__(self, frame=None):
+        self.frame = frame
+        self.opcode = None
+        self.opcode_desc = None
+        self.parts = []
+        self.params = {}
+        self.payload = None
+
+    def __repr__(self):
+        r = '<%s packet opcode=%s' % (self.__class__.__name__, self.opcode)
+        if self.opcode_desc:
+            r += '(%s)' % self.opcode_desc
+        keys = self.params.keys()
+        keys.sort()
+        for k in keys:
+            r += ' %s=%s' % (k, self.params[k])
+        r += '>'
+        return r
 
 
+    ## Dict methods
+    def __setitem__(self, k, v):
+        self.params[k] = v
+
+    def __getitem__(self, k):
+        return self.params[k]
+
+    def __contains__(self, k):
+        return k in self.params
+
+    def __iter__(self):
+        return self.params.__iter__()
+
+    def has_key(self, k):
+        return self.params.has_key(k)
+
+    def keys(self):
+        return self.params.keys()
+
+    ##
+
+    def assert_in(self, a, *b):
+        if len(b) == 1:
+            assert a == b[0], ('%r != %r' % (a, b[0]))
+        else:
+            assert a in b, ('%r not in %r' % (a, b))
+
+    def show(self):
+        print '%s %3s: %s' % (self.__class__.__name__,
+                              self.opcode,
+                              self.opcode_desc)
+        if self.frame:
+            print '    %s:%d -> %s:%d (%s)' % (self.frame.src_addr,
+                                               self.frame.sport,
+                                               self.frame.dst_addr,
+                                               self.frame.dport,
+                                               time.ctime(self.frame.time))
+
+        if self.parts:
+            dl = len(self.parts[-1])
+            p = []
+            for x in self.parts[:-1]:
+                if x == dl:
+                    p.append('%3d!' % x)
+                else:
+                    p.append('%3d' % x)
+            print '           parts: (%s) +%d bytes' % (','.join(p), dl)
+
+        keys = self.params.keys()
+        keys.sort()
+        for k in keys:
+            print '    %12s: %s' % (k, self.params[k])
+
+        if self.payload:
+            try:
+                self.payload.hexdump()
+            except AttributeError:
+                print '         payload: %r' % self.payload
+
+    def parse(self, data):
+        """Parse a chunk of data (possibly a GapString).
+
+        Anything returned is not part of this packet and will be passed
+        in to a subsequent packet.
+
+        """
+
+        self.parts = [data]
+        return None
+
+    def handle(self, data):
+        """Handle data from a Session class."""
+
+        data = self.parse(data)
+        if self.opcode <> None:
+            f = getattr(self, 'opcode_%s' % self.opcode)
+            if not self.opcode_desc and f.__doc__:
+                self.opcode_desc = f.__doc__.split('\n')[0]
+            f()
+        return data
 
 
+class Session:
+    """Base class for a binary protocol session."""
+
+    # Override this, duh
+    Packet = Packet
+
+    def handle(self, frame, data):
+        """Handle a data burst.
+
+        Pass in a representative frame--earlier is better--and a hunk of
+        data--possibly a GapString.
+
+        """
+
+        while data:
+            p = self.Packet(frame)
+            data = p.handle(data)
+            self.process(p)
+
+    def process(self, packet):
+        """Process a packet.
+
+        When you first start out, this probably does exactly what you
+        want: print out packets as they come in.  As you progress you'll
+        probably want to override it with something more sophisticated.
+        That will of course vary wildly between protocols.
+
+        """
+
+        packet.show()
 

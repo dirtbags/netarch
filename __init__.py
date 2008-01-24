@@ -158,7 +158,7 @@ class BitVector:
         i = self._val >> (self._len - b)
         l = b - a
         mask = (1 << l) - 1
-        return bitvector(i & mask, length=l)
+        return BitVector(i & mask, length=l)
 
     def __iter__(self):
         v = self._val
@@ -185,33 +185,66 @@ class BitVector:
     def __repr__(self):
         l = list(self)
         l.reverse()
-        return '<bitvector ' + ''.join(str(x) for x in l) + '>'
+        return '<BitVector ' + ''.join(str(x) for x in l) + '>'
 
     def __add__(self, i):
-        if isinstance(i, bitvector):
+        if isinstance(i, BitVector):
             l = len(self) + len(i)
             v = (int(self) << len(i)) + int(i)
-            return bitvector(v, l)
+            return BitVector(v, l)
         else:
             raise ValueError("Can't extend with this type yet")
 
 
-b64_chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-def esab64_decode(s):
-    """Little-endian version of base64"""
 
-    r = []
-    for i in range(0, len(s), 4):
-        v = bitvector()
-        for c in s[i:i+4]:
-            if c == '=':
-                break
-            v += bitvector(b64_chars.index(c), 6)
+##
+## Codecs
+##
 
-        # Normal base64 would start at the beginning
-        b = (v[10:12] + v[ 0: 6] +
-             v[14:18] + v[ 6:10] +
-             v[18:24] + v[12:14])
+import codecs
+from __init__ import BitVector
 
-        r.append(str(b))
-    return ''.join(r)
+class Esab64Codec(codecs.Codec):
+    """Little-endian version of base64."""
+
+    ## This could be made nicer by better conforming to the codecs.Codec
+    ## spec.  For instance, raising the appropriate exceptions.
+    ##
+    ## Using BitVector makes the code very readable, but it is probably
+    ## slow.
+
+    b64_chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    def decode(self, input, errors='strict'):
+        r = []
+        for i in range(0, len(input), 4):
+            v = BitVector()
+            for c in input[i:i+4]:
+                if c in ('=', ' ', '\n'):
+                    break
+                v += BitVector(self.b64_chars.index(c), 6)
+
+            # Normal base64 would start at the beginning
+            b = (v[10:12] + v[ 0: 6] +
+                 v[14:18] + v[ 6:10] +
+                 v[18:24] + v[12:14])
+
+            r.append(str(b))
+        return ''.join(r), len(input)
+
+    def encode(self, input, errors='strict'):
+        raise NotImplementedError()
+
+
+class Esab64StreamWriter(Esab64Codec, codecs.StreamWriter):
+    pass
+
+class Esab64StreamReader(Esab64Codec, codecs.StreamReader):
+    pass
+
+def _registry(encoding):
+    if encoding == 'esab64':
+        c = Esab64Codec()
+        return (c.encode, c.decode,
+                Esab64StreamReader, Esab64StreamWriter)
+
+codecs.register(_registry)

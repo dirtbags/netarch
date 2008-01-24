@@ -40,6 +40,16 @@ class GapString:
                 ret.append(i)
         return ''.join(ret)
 
+    def __iter__(self):
+        for i in self.contents:
+            if isinstance(i, int):
+                for j in range(i):
+                    yield self.drop
+            else:
+                for c in i:
+                    yield c
+
+
     def hexdump(self, fd=sys.stdout):
         offset = 0
 
