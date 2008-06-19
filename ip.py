@@ -140,11 +140,12 @@ class Chunk:
 
     def __repr__(self):
         if self.first:
-            return '<Chunk %s:%d -> %s:%d length %d>' % (self.first.src_addr,
-                                                         self.first.sport,
-                                                         self.first.dst_addr,
-                                                         self.first.dport,
-                                                         len(self))
+            return '<Chunk %s:%d -> %s:%d length %d (0x%x)>' % (self.first.src_addr,
+                                                                self.first.sport,
+                                                                self.first.dst_addr,
+                                                                self.first.dport,
+                                                                len(self),
+                                                                len(self))
         else:
             return '<Chunk (no frames)>'
 
@@ -359,8 +360,8 @@ class Packet(UserDict.DictMixin):
 
     opcodes = {}
 
-    def __init__(self, frame=None):
-        self.frame = frame
+    def __init__(self, firstframe=None):
+        self.firstframe = firstframe
         self.opcode = None
         self.opcode_desc = None
         self.parts = []
@@ -410,12 +411,12 @@ class Packet(UserDict.DictMixin):
         print '%s %3s: %s' % (self.__class__.__name__,
                               self.opcode,
                               self.opcode_desc)
-        if self.frame:
-            print '    %s:%d -> %s:%d (%s)' % (self.frame.src_addr,
-                                               self.frame.sport,
-                                               self.frame.dst_addr,
-                                               self.frame.dport,
-                                               time.ctime(self.frame.time))
+        if self.firstframe:
+            print '    %s:%d -> %s:%d (%s)' % (self.firstframe.src_addr,
+                                               self.firstframe.sport,
+                                               self.firstframe.dst_addr,
+                                               self.firstframe.dport,
+                                               time.ctime(self.firstframe.time))
 
         if self.parts:
             dl = len(self.parts[-1])
@@ -467,16 +468,16 @@ class Session:
     # Override this, duh
     Packet = Packet
 
-    def handle(self, frame, data):
+    def handle(self, chunk):
         """Handle a data burst.
 
-        Pass in a representative frame--earlier is better--and a hunk of
-        data--possibly a GapString.
+        Pass in a chunk.
 
         """
 
+        data = chunk.gapstr()
         while data:
-            p = self.Packet(frame)
+            p = self.Packet(chunk.first)
             data = p.handle(data)
             self.process(p)
 
