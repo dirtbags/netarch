@@ -72,10 +72,11 @@ class GapString:
         start = min(self.length, start)
 
         new = self.__class__(drop=self.drop)
-        new.contents = self.contents[:]
         new.length = end - start
         if new.length == 0:
+            new.contents = []
             return new
+        new.contents = self.contents[:]
 
         l = self.length - new.length - start
 
@@ -105,6 +106,10 @@ class GapString:
 
         return new
 
+    def __getitem__(self, idx):
+        # XXX: speed up
+        return str(self)[idx]
+
     def __add__(self, other):
         if isinstance(other, str):
             self.append(other)
@@ -118,6 +123,8 @@ class GapString:
         if isinstance(mask, int):
             mask = [mask]
         masklen = len(mask)
+        if isinstance(mask, str):
+            mask = [ord(c) for c in mask]
 
         new = self.__class__(drop=self.drop)
         for i in self.contents:
@@ -153,3 +160,5 @@ if __name__ == '__main__':
     assert str(gs[:4]) == '1234'
     assert len(gs[:4]) == 4
     assert len(gs[6:]) == 4
+    assert str(gs[:0]) == ''
+
