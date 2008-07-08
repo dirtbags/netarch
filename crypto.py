@@ -1,7 +1,7 @@
 #! /usr/bin/python
 
 ## Codebreaking tools
-## 2007  Neale Pickett
+## 2007  Massive Blowout
 ## I should get an LAUR for this so we can share it.
 
 from sets import Set

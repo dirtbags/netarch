@@ -1,5 +1,8 @@
 #! /usr/bin/python
 
+## IP resequencing + protocol reversing skeleton
+## 2008 Massive Blowout
+
 import StringIO
 import struct
 import socket
@@ -351,6 +354,9 @@ def demux(*pcs):
 ## Binary protocol stuff
 ##
 
+class NeedMoreData(Exception):
+    pass
+
 class Packet(UserDict.DictMixin):
     """Base class for a packet from a binary protocol.
 
@@ -455,11 +461,19 @@ class Packet(UserDict.DictMixin):
 
         data = self.parse(data)
         if self.opcode <> None:
-            f = getattr(self, 'opcode_%s' % self.opcode)
+            try:
+                f = getattr(self, 'opcode_%s' % self.opcode)
+            except AttributeError:
+                f = self.opcode_unknown
             if not self.opcode_desc and f.__doc__:
                 self.opcode_desc = f.__doc__.split('\n')[0]
             f()
         return data
+
+    def opcode_unknown(self):
+        """Unknown opcode"""
+
+        raise AttributeError('Opcode %d unknown' % self.opcode)
 
 
 class Session:
@@ -468,6 +482,9 @@ class Session:
     # Override this, duh
     Packet = Packet
 
+    def __init__(self):
+        self.pending = {}
+
     def handle(self, chunk):
         """Handle a data burst.
 
@@ -475,11 +492,20 @@ class Session:
 
         """
 
-        data = chunk.gapstr()
-        while data:
-            p = self.Packet(chunk.first)
-            data = p.handle(data)
-            self.process(p)
+        saddr = chunk.first.saddr
+        try:
+            (first, data) = self.pending[saddr]
+        except KeyError:
+            first = chunk.first
+            data = gapstr.GapString()
+        data.extend(chunk.gapstr())
+        try:
+            while data:
+                p = self.Packet(first)
+                data = p.handle(data)
+                self.process(p)
+        except NeedMoreData:
+            self.pending[saddr] = (first, data)
 
     def process(self, packet):
         """Process a packet.
@@ -493,3 +519,14 @@ class Session:
 
         packet.show()
 
+    def done(self):
+        """Called when all packets have been handled"""
+
+        return
+
+    def handle_packets(self, collection):
+        """Handle a collection of packets"""
+
+        for chunk in resequence(collection):
+            self.handle(chunk)
+        self.done()

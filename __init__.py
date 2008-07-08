@@ -1,6 +1,8 @@
 #! /usr/bin/python
 # -*- coding: utf-8 -*-
 
+## 2008 Massive Blowout
+
 import sys
 import struct
 
@@ -111,29 +113,9 @@ def assert_in(a, *b):
 ## Binary stuff
 ##
 
-def bin(i):
-    """Return the binary representation of i"""
-
-    r = []
-    while i > 0:
-        r.append(i % 2)
-        i = i >> 1
-    r.reverse()
-    s = ''.join(str(x) for x in r)
-    return s
-
 class BitVector:
     def __init__(self, i=0, length=None):
-        if type(i) == type(''):
-            self._val = 0
-            for c in i:
-                self._val <<= 8
-                self._val += ord(c)
-            if length is not None:
-                self._len = length
-            else:
-                self._len = len(i) * 8
-        else:
+        if type(i) == type(1):
             self._val = i
             if length is not None:
                 self._len = length
@@ -142,6 +124,15 @@ class BitVector:
                 while i > 0:
                     i >>= 1
                     self._len += 1
+        else:
+            self._val = 0
+            for c in i:
+                self._val <<= 8
+                self._val += ord(c)
+            if length is not None:
+                self._len = length
+            else:
+                self._len = len(i) * 8
 
     def __len__(self):
         return self._len
@@ -161,6 +152,8 @@ class BitVector:
         return BitVector(i & mask, length=l)
 
     def __iter__(self):
+        """Iterate from LSB to MSB"""
+
         v = self._val
         for i in xrange(self._len):
             yield int(v & 1)
@@ -195,6 +188,16 @@ class BitVector:
         else:
             raise ValueError("Can't extend with this type yet")
 
+    def bitstr(self):
+        bits = [str(x) for x in self]
+        bits.reverse()
+        return ''.join(bits)
+
+
+def bin(i, bits=None):
+    """Return the binary representation of i"""
+
+    return BitVector(i, bits).bitstr()
 
 
 ##

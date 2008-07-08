@@ -1,5 +1,7 @@
 #! /usr/bin/python
 
+## 2008 Massive Blowout
+
 """Functions to treat a list as a string with gaps.
 
 Lists should have only string and integer items.
@@ -122,9 +124,9 @@ class GapString:
     def __xor__(self, mask):
         if isinstance(mask, int):
             mask = [mask]
-        masklen = len(mask)
-        if isinstance(mask, str):
+        if isinstance(mask, str) or isinstance(mask, GapString):
             mask = [ord(c) for c in mask]
+        masklen = len(mask)
 
         new = self.__class__(drop=self.drop)
         for i in self.contents:
