@@ -494,7 +494,7 @@ class Session:
 
         saddr = chunk.first.saddr
         try:
-            (first, data) = self.pending[saddr]
+            (first, data) = self.pending.pop(saddr)
         except KeyError:
             first = chunk.first
             data = gapstr.GapString()

@@ -17,7 +17,6 @@ class GapString:
         self.length = 0
         self.drop = drop
         if init:
-            print init
             self.append(init)
 
     def __len__(self):

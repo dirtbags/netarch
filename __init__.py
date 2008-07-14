@@ -200,6 +200,12 @@ def bin(i, bits=None):
     return BitVector(i, bits).bitstr()
 
 
+def unhex(s):
+    """Decode a string as hex, stripping whitespace first"""
+
+    return [ord(i) for i in s.replace(' ', '').decode('hex')]
+
+
 ##
 ## Codecs
 ##
