@@ -11,13 +11,7 @@ import heapq
 import gapstr
 import time
 import UserDict
-
-def unpack(fmt, buf):
-    """Unpack buf based on fmt, assuming the rest is a string."""
-
-    size = struct.calcsize(fmt)
-    vals = struct.unpack(fmt, buf[:size])
-    return vals + (buf[size:],)
+from __init__ import *
 
 def unpack_nybbles(byte):
     return (byte >> 4, byte & 0x0F)
@@ -28,7 +22,7 @@ TCP  = 6
 UDP  = 17
 
 class Frame:
-    """Turn an ethernet frame into relevant TCP parts"""
+    """Turn an ethernet frame into relevant parts"""
 
     def __init__(self, pkt):
         ((self.time, _, _), frame) = pkt
@@ -38,65 +32,85 @@ class Frame:
          self.eth_shost,
          self.eth_type,
          p) = unpack('!6s6sH', frame)
-        if self.eth_type != 0x0800:
-            raise ValueError('Not IP %04x' % self.eth_type)
-
-        # IP
-        (self.ihlvers,
-         self.tos,
-         self.tot_len,
-         self.id,
-         self.frag_off,
-         self.ttl,
-         self.protocol,
-         self.check,
-         self.saddr,
-         self.daddr,
-         p) = unpack("!BBHHHBBHii", p)
-
-        if self.protocol == TCP:
-            self.name = 'TCP'
-            (self.sport,
-             self.dport,
-             self.seq,
-             self.ack,
-             x2off,
-             self.flags,
-             self.win,
-             self.sum,
-             self.urp,
-             p) = unpack("!HHLLBBHHH", p)
-            (self.off, th_x2) = unpack_nybbles(x2off)
-            opt_length = self.off * 4
-            self.options, p = p[:opt_length - 20], p[opt_length - 20:]
-            self.payload = p[:self.tot_len - opt_length - 20]
-        elif self.protocol == UDP:
-            self.name = 'UDP'
-            (self.sport,
-             self.dport,
-             self.ulen,
-             self.sum,
-             p) = unpack("!HHHH", p)
-            self.payload = p[:self.ulen - 8]
-        elif self.protocol == ICMP:
-            self.name = 'ICMP'
-            self.sport = self.dport = -1
-            (self.type,
-             self.code,
-             self.cheksum,
+        if self.eth_type == 0x0806:
+            # ARP
+            self.name = 'ARP'
+            (self.ar_hrd,
+             self.ar_pro,
+             self.ar_hln,
+             self.ar_pln,
+             self.ar_op,
+             self.ar_sha,
+             self.ar_sip,
+             self.ar_tha,
+             self.ar_tip,
+             p) = unpack('!HHBBH6si6si', p)
+            self.saddr = self.ar_sip
+            self.daddr = self.ar_tip
+            self.__repr__ = self.__arp_repr__
+        elif self.eth_type == 0x0800:
+            # IP
+            (self.ihlvers,
+             self.tos,
+             self.tot_len,
              self.id,
-             self.seq,
-             p) = unpack('!BBHHH', p)
-            self.payload = p[:self.tot_len - 8]
+             self.frag_off,
+             self.ttl,
+             self.protocol,
+             self.check,
+             self.saddr,
+             self.daddr,
+             p) = unpack("!BBHHHBBHii", p)
+
+            if self.protocol == TCP:
+                self.name = 'TCP/IP'
+                (self.sport,
+                 self.dport,
+                 self.seq,
+                 self.ack,
+                 x2off,
+                 self.flags,
+                 self.win,
+                 self.sum,
+                 self.urp,
+                 p) = unpack("!HHLLBBHHH", p)
+                (self.off, th_x2) = unpack_nybbles(x2off)
+                opt_length = self.off * 4
+                self.options, p = p[:opt_length - 20], p[opt_length - 20:]
+                self.payload = p[:self.tot_len - opt_length - 20]
+            elif self.protocol == UDP:
+                self.name = 'UDP/IP'
+                (self.sport,
+                 self.dport,
+                 self.ulen,
+                 self.sum,
+                 p) = unpack("!HHHH", p)
+                self.payload = p[:self.ulen - 8]
+            elif self.protocol == ICMP:
+                self.name = 'ICMP/IP'
+                self.sport = self.dport = None
+                (self.type,
+                 self.code,
+                 self.cheksum,
+                 self.id,
+                 self.seq,
+                 p) = unpack('!BBHHH', p)
+                self.payload = p[:self.tot_len - 8]
+            else:
+                self.name = 'IP Protocol %d' % self.protocol
+                self.sport = self.dport = None
+                self.payload = p
+
+            # Nice formatting
+            self.src = (self.saddr, self.sport)
+            self.dst = (self.daddr, self.dport)
+
+            # This hash is the same for both sides of the transaction
+            self.hash = (self.saddr ^ (self.sport or 0)
+                         ^ self.daddr ^ (self.dport or 0))
         else:
-            raise ValueError('Unknown protocol')
+            self.name = 'Ethernet type %d' % self.eth_type
 
-        # Nice formatting
-        self.src = (self.saddr, self.sport)
-        self.dst = (self.daddr, self.dport)
-
-        # This hash is the same for both sides of the transaction
-        self.hash = (self.saddr ^ self.sport ^ self.daddr ^ self.dport)
 
     def get_src_addr(self):
         saddr = struct.pack('!i', self.saddr)
@@ -111,10 +125,17 @@ class Frame:
     dst_addr = property(get_dst_addr)
 
     def __repr__(self):
-        return '<Frame %s %s:%d -> %s:%d length %d>' % (self.name,
+        return '<Frame %s %s:%r -> %s:%r length %d>' % (self.name,
                                                         self.src_addr, self.sport,
                                                         self.dst_addr, self.dport,
                                                         len(self.payload))
+
+    def __arp_repr__(self):
+        return '<Frame %s %s(%s) -> %s(%s)>' % (self.name,
+                                                self.ar_sha.encode('hex'),
+                                                self.src_addr,
+                                                self.ar_tha.encode('hex'),
+                                                self.dst_addr)
 
 
 class Chunk:
