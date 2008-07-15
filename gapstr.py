@@ -73,7 +73,7 @@ class GapString:
         start = min(self.length, start)
 
         new = self.__class__(drop=self.drop)
-        new.length = end - start
+        new.length = max(end - start, 0)
         if new.length == 0:
             new.contents = []
             return new

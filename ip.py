@@ -17,24 +17,30 @@ def unpack_nybbles(byte):
     return (byte >> 4, byte & 0x0F)
 
 
+IP = 0x0800
+ARP = 0x0806
+
 ICMP = 1
 TCP  = 6
 UDP  = 17
+
+def str_of_eth(d):
+    return ':'.join([('%02x' % ord(x)) for x in d])
 
 class Frame:
     """Turn an ethernet frame into relevant parts"""
 
     def __init__(self, pkt):
-        ((self.time, _, _), frame) = pkt
+        ((self.time, self.time_usec, _), frame) = pkt
 
         # Ethernet
         (self.eth_dhost,
          self.eth_shost,
          self.eth_type,
          p) = unpack('!6s6sH', frame)
-        if self.eth_type == 0x0806:
+        if self.eth_type == ARP:
             # ARP
-            self.name = 'ARP'
+            self.name, self.protocol = ('ARP', ARP)
             (self.ar_hrd,
              self.ar_pro,
              self.ar_hln,
@@ -48,7 +54,7 @@ class Frame:
             self.saddr = self.ar_sip
             self.daddr = self.ar_tip
             self.__repr__ = self.__arp_repr__
-        elif self.eth_type == 0x0800:
+        elif self.eth_type == IP:
             # IP
             (self.ihlvers,
              self.tos,
@@ -132,9 +138,9 @@ class Frame:
 
     def __arp_repr__(self):
         return '<Frame %s %s(%s) -> %s(%s)>' % (self.name,
-                                                self.ar_sha.encode('hex'),
+                                                str_of_eth(self.ar_sha),
                                                 self.src_addr,
-                                                self.ar_tha.encode('hex'),
+                                                str_of_eth(self.ar_tha),
                                                 self.dst_addr)
 
 
