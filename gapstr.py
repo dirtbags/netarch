@@ -50,6 +50,11 @@ class GapString:
                 for c in i:
                     yield c
 
+    def hasgaps(self):
+        for i in self.contents:
+            if isinstance(i, int):
+                return True
+        return False
 
     def hexdump(self, fd=sys.stdout):
         offset = 0

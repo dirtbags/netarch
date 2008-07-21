@@ -116,6 +116,7 @@ class Frame:
                          ^ self.daddr ^ (self.dport or 0))
         else:
             self.name = 'Ethernet type %d' % self.eth_type
+            self.protocol = None
 
 
     def get_src_addr(self):
@@ -271,11 +272,11 @@ class TCP_Resequence:
         if pkt.flags == SYN:
             self.cli, self.srv = pkt.src, pkt.dst
         elif pkt.flags == (SYN | ACK):
-            assert (pkt.src == (self.srv or pkt.src))
+            #assert (pkt.src == (self.srv or pkt.src))
             self.cli, self.srv = pkt.dst, pkt.src
             self.seq = [pkt.ack, pkt.seq + 1]
         elif pkt.flags == ACK:
-            assert (pkt.src == (self.cli or pkt.src))
+            #assert (pkt.src == (self.cli or pkt.src))
             self.cli, self.srv = pkt.src, pkt.dst
             self.seq = [pkt.seq, pkt.ack]
             self.handle = self.handle_packet
@@ -345,11 +346,11 @@ def resequence(pc):
         f = Frame(pkt)
         if f.protocol == TCP:
             # compute TCP session hash
-            s = sessions.get(f.hash)
-            if not s:
-                s = TCP_Resequence()
-                sessions[f.hash] = s
-            chunk = s.handle(f)
+            tcp_sess = sessions.get(f.hash)
+            if not tcp_sess:
+                tcp_sess = TCP_Resequence()
+                sessions[f.hash] = tcp_sess
+            chunk = tcp_sess.handle(f)
             if chunk:
                 yield chunk
 
@@ -481,6 +482,7 @@ class Packet(UserDict.DictMixin):
         """
 
         self.parts = [data]
+        self.payload = data
         return None
 
     def handle(self, data):
@@ -557,3 +559,42 @@ class Session:
         for chunk in resequence(collection):
             self.handle(chunk)
         self.done()
+
+
+class HtmlSession(Session):
+    def __init__(self, frame):
+        Session.__init__(self)
+        self.uid = '%s:%d-%s:%d' % (frame.src_addr, frame.sport,
+                                    frame.dst_addr, frame.dport)
+
+        self.sessionfile = 'transfers/session-%s.html' % self.uid
+        self.fn = '%s.html' % (self.infilename)
+        self.fd = file(self.fn, 'w')
+        self.fd.write('''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+  <title>%s</title>
+  <style type="text/css">
+    .client { background-color: blue; color: white; }
+  </style>
+</head>
+<body>
+''' % self.__class__.__name__)
+        self.fd.write('<h1>%s</h1>\n' % self.__class__.__name__)
+        self.fd.write('<pre>')
+        self.srv = None
+
+    def __del__(self):
+        self.fd.write('</pre></body></html>')
+
+    def log(self, frame, payload):
+        if frame.saddr == self.srv:
+            cls = 'server'
+        else:
+            cls = 'client'
+        self.fd.write('<span class="%s" title="%s(%s)">' % (cls, time.ctime(frame.time), frame.time))
+        self.fd.write(payload.replace('\r\n', '\n'))
+        self.fd.write('</span>')
