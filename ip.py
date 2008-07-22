@@ -10,6 +10,7 @@ import warnings
 import heapq
 import gapstr
 import time
+import pcap
 import UserDict
 from __init__ import *
 
@@ -250,6 +251,7 @@ class TCP_Resequence:
         self.pending = [{}, {}]
         self.frames = 0
         self.closed = 0
+        self.midstream = False
 
         self.handle = self.handle_handshake
 
@@ -282,6 +284,8 @@ class TCP_Resequence:
             self.handle = self.handle_packet
         else:
             # In the middle of a session, do the best we can
+            warnings.warn('Starting mid-stream')
+            self.midstream = True
             self.cli, self.srv = pkt.src, pkt.dst
             self.seq = [pkt.seq, pkt.ack]
             self.handle = self.handle_packet
@@ -332,50 +336,56 @@ class TCP_Resequence:
             warnings.warn('Spurious frame after shutdown: %r %d' % (pkt, pkt.flags))
 
 
-def resequence(pc):
-    """Re-sequence from a pcap stream.
+class Resequence:
+    def __init__(self, *filenames):
+        self.pcs = {}
 
-    >>> p = pcap.open('whatever.pcap')
-    >>> for chunk in resequence(p):
-    ...    print `chunk`
+        self.sessions = {}
+        self.tops = []
 
-    """
+        self.last = None
 
-    sessions = {}
-    for pkt in pc:
-        f = Frame(pkt)
-        if f.protocol == TCP:
-            # compute TCP session hash
-            tcp_sess = sessions.get(f.hash)
-            if not tcp_sess:
-                tcp_sess = TCP_Resequence()
-                sessions[f.hash] = tcp_sess
-            chunk = tcp_sess.handle(f)
-            if chunk:
-                yield chunk
+        for fn in filenames:
+            self.open(fn)
 
-def demux(*pcs):
-    """Demultiplex pcap objects based on time.
+    def open(self, filename, literal=False):
+        if not literal:
+            parts = filename.split(':::')
+            fn = parts[0]
+            fd = file(fn)
+            pc = pcap.open(fd)
+            if len(parts) > 1:
+                pos = int(parts[1])
+                fd.seek(pos)
+            self._read(pc, fn, fd)
+        else:
+            fd = file(filename)
+            pc = pcap.open(fd)
+            self._read(pc, filename, fd)
 
-    This is iterable just like a pcap object, so you could for instance do:
+    def _read(self, pc, filename, fd):
+        pos = fd.tell()
+        pkt = pc.read()
+        if pkt:
+            heapq.heappush(self.tops, (pkt, pc, filename, fd, pos))
 
-    >>> resequence(demux(pcap1, pcap2, pcap3))
-
-    """
-
-    tops = []
-    for pc in pcs:
-        frame = pc.read()
-        if frame:
-            heapq.heappush(tops, (frame, pc))
-
-    while tops:
-        frame, pc = heapq.heappop(tops)
-        yield frame
-        frame = pc.read()
-        if frame:
-            heapq.heappush(tops, (frame, pc))
-
+    def __iter__(self):
+        while self.tops:
+            pkt, pc, filename, fd, pos = heapq.heappop(self.tops)
+            if not self.last:
+                self.last = (filename, pos)
+            frame = Frame(pkt)
+            if frame.protocol == TCP:
+                # compute TCP session hash
+                tcp_sess = self.sessions.get(frame.hash)
+                if not tcp_sess:
+                    tcp_sess = TCP_Resequence()
+                    self.sessions[frame.hash] = tcp_sess
+                chunk = tcp_sess.handle(frame)
+                if chunk:
+                    yield chunk
+                    self.last = None
+            self._read(pc, filename, fd)
 
 
 ##
@@ -394,7 +404,8 @@ class Packet(UserDict.DictMixin):
 
     opcodes = {}
 
-    def __init__(self, firstframe=None):
+    def __init__(self, session, firstframe=None):
+        self.session = session
         self.firstframe = firstframe
         self.opcode = None
         self.opcode_desc = None
@@ -513,28 +524,41 @@ class Session:
 
     def __init__(self):
         self.pending = {}
+        self.count = 0
+        self.setup()
 
-    def handle(self, chunk):
+    def setup(self):
+        """Set things up."""
+
+        pass
+
+    def handle(self, chunk, lastpos):
         """Handle a data burst.
 
         Pass in a chunk.
 
         """
 
-        saddr = chunk.first.saddr
+        self.lastpos = lastpos
         try:
-            (first, data) = self.pending.pop(saddr)
-        except KeyError:
-            first = chunk.first
-            data = gapstr.GapString()
-        data.extend(chunk.gapstr())
-        try:
-            while data:
-                p = self.Packet(first)
-                data = p.handle(data)
-                self.process(p)
-        except NeedMoreData:
-            self.pending[saddr] = (first, data)
+            saddr = chunk.first.saddr
+            try:
+                (first, data) = self.pending.pop(saddr)
+            except KeyError:
+                first = chunk.first
+                data = gapstr.GapString()
+            data.extend(chunk.gapstr())
+            try:
+                while data:
+                    p = self.Packet(self, first)
+                    data = p.handle(data)
+                    self.process(p)
+            except NeedMoreData:
+                self.pending[saddr] = (first, data)
+            self.count += 1
+        except:
+            print 'Lastpos: %s:::%d' % lastpos
+            raise
 
     def process(self, packet):
         """Process a packet.
@@ -546,6 +570,7 @@ class Session:
 
         """
 
+        print 'Lastpos: %s:::%d' % self.lastpos
         packet.show()
 
     def done(self):
