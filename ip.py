@@ -515,8 +515,6 @@ class Session:
                 data = gapstr.GapString()
             data.extend(gs)
             try:
-                print (data, data.length)
-                print (data, bool(data))
                 while data:
                     p = self.Packet(self, f)
                     data = p.handle(data)
