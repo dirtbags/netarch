@@ -11,6 +11,9 @@ import heapq
 import gapstr
 import time
 import pcap
+import os
+import cgi
+import urllib
 import UserDict
 from __init__ import *
 
@@ -158,6 +161,7 @@ class Chunk:
         self.first = None
 
     def add(self, frame):
+        print 'self.seq=%d, adding %d' % (self.seq, frame.seq)
         if not self.first:
             self.first = frame
         if self.seq is None:
@@ -166,6 +170,11 @@ class Chunk:
         self.collection[frame.seq] = frame
         end = frame.seq - self.seq + len(frame.payload)
         self.length = max(self.length, long(end))
+
+    def setlast(self, seq):
+        l = seq - self.seq
+        print 'len', l, self.length
+        self.length = max(l, self.length)
 
     def __len__(self):
         return int(self.length)
@@ -252,6 +261,7 @@ class TCP_Resequence:
         self.frames = 0
         self.closed = 0
         self.midstream = False
+        self.hash = 0
 
         self.handle = self.handle_handshake
 
@@ -270,24 +280,27 @@ class TCP_Resequence:
 
         if not self.first:
             self.first = pkt
+            self.hash = pkt.hash
 
         if pkt.flags == SYN:
             self.cli, self.srv = pkt.src, pkt.dst
         elif pkt.flags == (SYN | ACK):
             #assert (pkt.src == (self.srv or pkt.src))
             self.cli, self.srv = pkt.dst, pkt.src
-            self.seq = [pkt.ack, pkt.seq + 1]
+            self.lastack = [pkt.seq + 1, pkt.ack]
+            self.handle_packet(pkt)
         elif pkt.flags == ACK:
             #assert (pkt.src == (self.cli or pkt.src))
             self.cli, self.srv = pkt.src, pkt.dst
-            self.seq = [pkt.seq, pkt.ack]
+            self.lastack = [pkt.ack, pkt.seq]
             self.handle = self.handle_packet
+            self.handle(pkt)
         else:
             # In the middle of a session, do the best we can
             warnings.warn('Starting mid-stream')
             self.midstream = True
             self.cli, self.srv = pkt.src, pkt.dst
-            self.seq = [pkt.seq, pkt.ack]
+            self.lastack = [pkt.ack, pkt.seq]
             self.handle = self.handle_packet
             self.handle(pkt)
 
@@ -300,7 +313,7 @@ class TCP_Resequence:
         xdi = 1 - idx
 
         # Does this ACK after the last output sequence number?
-        seq = self.seq[xdi]
+        seq = self.lastack[idx]
         if pkt.ack > seq:
             ret = Chunk(seq)
             pending = self.pending[xdi]
@@ -310,9 +323,10 @@ class TCP_Resequence:
                 if key >= seq:
                     ret.add(pending[key])
                 else:
-                    warnings.warn('Dropping %r from mid-stream session' % pending[key])
+                    warnings.warn('Dropping out-of-order packet %r from mid-stream session' % pending[key])
                 del pending[key]
-            self.seq[xdi] = pkt.ack
+            ret.setlast(pkt.ack)
+            self.lastack[idx] = pkt.ack
 
         # If it has a payload, stick it into pending
         if pkt.payload:
@@ -522,7 +536,9 @@ class Session:
     # Override this, duh
     Packet = Packet
 
-    def __init__(self):
+    def __init__(self, frame):
+        self.frame = frame
+        self.basename = 'transfers/%s' % (frame.src_addr,)
         self.pending = {}
         self.count = 0
         self.setup()
@@ -578,6 +594,17 @@ class Session:
 
         return
 
+    def make_filename(self, fn):
+        try:
+            os.makedirs(self.basename)
+        except OSError:
+            pass
+        frame = self.frame
+        fn = '%s:%d-%s:%d---%s' % (frame.src_addr, frame.sport,
+                                   frame.dst_addr, frame.dport,
+                                   urllib.quote(fn, '\:'))
+        return os.path.join(self.basename, fn)
+
     def handle_packets(self, collection):
         """Handle a collection of packets"""
 
@@ -588,12 +615,8 @@ class Session:
 
 class HtmlSession(Session):
     def __init__(self, frame):
-        Session.__init__(self)
-        self.uid = '%s:%d-%s:%d' % (frame.src_addr, frame.sport,
-                                    frame.dst_addr, frame.dport)
-
-        self.sessionfile = 'transfers/session-%s.html' % self.uid
-        self.fn = '%s.html' % (self.infilename)
+        Session.__init__(self, frame)
+        self.fn = self.make_filename('session.html')
         self.fd = file(self.fn, 'w')
         self.fd.write('''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html
@@ -603,6 +626,7 @@ class HtmlSession(Session):
 <head>
   <title>%s</title>
   <style type="text/css">
+    .server { background-color
     .client { background-color: blue; color: white; }
   </style>
 </head>
@@ -615,11 +639,17 @@ class HtmlSession(Session):
     def __del__(self):
         self.fd.write('</pre></body></html>')
 
-    def log(self, frame, payload):
+    def log(self, frame, payload, escape=True):
+        if escape:
+            p = cgi.escape(payload)
+        else:
+            p = payload
+        if not self.srv:
+            self.srv = frame.saddr
         if frame.saddr == self.srv:
             cls = 'server'
         else:
             cls = 'client'
         self.fd.write('<span class="%s" title="%s(%s)">' % (cls, time.ctime(frame.time), frame.time))
-        self.fd.write(payload.replace('\r\n', '\n'))
+        self.fd.write(p.replace('\r\n', '\n'))
         self.fd.write('</span>')
