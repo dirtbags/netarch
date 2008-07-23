@@ -26,11 +26,12 @@ class GapString:
         return '<GapString of length %d>' % self.length
 
     def append(self, i):
-        self.contents.append(i)
-        if isinstance(i, int):
-            self.length += i
-        else:
+        try:
             self.length += len(i)
+            self.contents.append(i)
+        except TypeError:
+            self.length += int(i)
+            self.contents.append(int(i))
 
     def __str__(self):
         ret = []
