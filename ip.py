@@ -136,10 +136,11 @@ class Frame:
     dst_addr = property(get_dst_addr)
 
     def __repr__(self):
-        return '<Frame %s %s:%r -> %s:%r length %d>' % (self.name,
-                                                        self.src_addr, self.sport,
-                                                        self.dst_addr, self.dport,
-                                                        len(self.payload))
+        return ('<Frame %s %s:%r(%08x) -> %s:%r(%08x) length %d>' %
+                (self.name,
+                 self.src_addr, self.sport, self.seq,
+                 self.dst_addr, self.dport, self.ack,
+                 len(self.payload)))
 
     def __arp_repr__(self):
         return '<Frame %s %s(%s) -> %s(%s)>' % (self.name,
@@ -180,10 +181,9 @@ class TCP_Resequence:
     def __init__(self):
         self.cli = None
         self.srv = None
-        self.seq = [None, None]
+        self.lastack = [None, None]
         self.first = None
         self.pending = [{}, {}]
-        self.frames = 0
         self.closed = 0
         self.midstream = False
         self.hash = 0
@@ -201,8 +201,6 @@ class TCP_Resequence:
         pass
 
     def handle_handshake(self, pkt):
-        self.frames += 1
-
         if not self.first:
             self.first = pkt
             self.hash = pkt.hash
@@ -231,7 +229,6 @@ class TCP_Resequence:
 
     def handle_packet(self, pkt):
         ret = None
-        self.frames += 1
 
         # Which way is this going?  0 == from client
         idx = int(pkt.src == self.srv)
@@ -259,7 +256,9 @@ class TCP_Resequence:
                 if key >= pkt.ack:
                     break
                 if key < seq:
-                    warnings.warn('Dropping %r from mid-stream session' % pending[key])
+                    # Hopefully just a retransmit...
+                    del pending[key]
+                    continue
                 elif key > seq:
                     gs.append(key - seq)
                     seq = key
@@ -277,12 +276,14 @@ class TCP_Resequence:
 
         # Is it a FIN or RST?
         if pkt.flags & (FIN | RST):
+            self.lastack[xdi] = pkt.seq + 1
             self.closed += 1
             if self.closed == 2:
                 # Warn about any unhandled packets
                 if self.pending[0] or self.pending[1]:
                     warnings.warn('Dropping unhandled frames after shutdown' % pkt)
                 self.handle = self.handle_drop
+            ret = None
 
         return ret
 
@@ -470,7 +471,7 @@ class Packet(UserDict.DictMixin):
     def opcode_unknown(self):
         """Unknown opcode"""
 
-        raise AttributeError('Opcode %d unknown' % self.opcode)
+        raise AttributeError('Opcode %s unknown' % self.opcode)
 
 
 class Session:
@@ -483,8 +484,15 @@ class Session:
         self.firstframe = frame
         self.lastframe = [None, None]
         self.basename = 'transfers/%s' % (frame.src_addr,)
+        self.basename2 = 'transfers/%s' % (frame.dst_addr,)
         self.pending = {}
         self.count = 0
+        for d in (self.basename, self.basename2):
+            try:
+                os.makedirs(d)
+            except OSError:
+                pass
+
         self.setup()
 
     def setup(self):
@@ -544,16 +552,22 @@ class Session:
 
         return
 
-    def make_filename(self, fn):
+    def open_out(self, fn):
+        frame = self.firstframe
+        fn = '%d-%s~%d-%s~%d---%s' % (frame.time,
+                                      frame.src_addr, frame.sport,
+                                      frame.dst_addr, frame.dport,
+                                      urllib.quote(fn, ''))
+        fullfn = os.path.join(self.basename, fn)
+        fullfn2 = os.path.join(self.basename2, fn)
+        print 'writing %s' % (fn,)
+        fd = file(fullfn, 'w')
         try:
-            os.makedirs(self.basename)
+            os.unlink(fullfn2)
         except OSError:
             pass
-        frame = self.firstframe
-        fn = '%s:%d-%s:%d---%s' % (frame.src_addr, frame.sport,
-                                   frame.dst_addr, frame.dport,
-                                   urllib.quote(fn, '\:'))
-        return os.path.join(self.basename, fn)
+        os.link(fullfn, fullfn2)
+        return fd
 
     def handle_packets(self, collection):
         """Handle a collection of packets"""
@@ -566,8 +580,7 @@ class Session:
 class HtmlSession(Session):
     def __init__(self, frame):
         Session.__init__(self, frame)
-        self.sessfn = self.make_filename('session.html')
-        self.sessfd = file(self.sessfn, 'w')
+        self.sessfd = self.open_out('session.html')
         self.sessfd.write('''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html
   PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
@@ -591,7 +604,7 @@ class HtmlSession(Session):
 
     def log(self, frame, payload, escape=True):
         if escape:
-            p = cgi.escape(payload)
+            p = cgi.escape(str(payload))
         else:
             p = payload
         if not self.srv:
