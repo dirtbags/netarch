@@ -323,16 +323,16 @@ class Dispatch:
 
     def _read(self, pc, filename, fd):
         pos = fd.tell()
-        pkt = pc.read()
-        if pkt:
-            heapq.heappush(self.tops, (pkt, pc, filename, fd, pos))
+        f = pc.read()
+        if f:
+            heapq.heappush(self.tops, (f, pc, filename, fd, pos))
 
     def __iter__(self):
         while self.tops:
-            pkt, pc, filename, fd, pos = heapq.heappop(self.tops)
+            f, pc, filename, fd, pos = heapq.heappop(self.tops)
             if not self.last:
                 self.last = (filename, pos)
-            frame = Frame(pkt)
+            frame = Frame(f)
             if frame.protocol == TCP:
                 # compute TCP session hash
                 tcp_sess = self.sessions.get(frame.hash)
@@ -415,11 +415,12 @@ class Packet(UserDict.DictMixin):
                               self.opcode,
                               self.opcode_desc)
         if self.firstframe:
-            print '    %s:%d -> %s:%d (%s)' % (self.firstframe.src_addr,
-                                               self.firstframe.sport,
-                                               self.firstframe.dst_addr,
-                                               self.firstframe.dport,
-                                               time.ctime(self.firstframe.time))
+            print '    %s:%d -> %s:%d (%s.%06dZ)' % (self.firstframe.src_addr,
+                                                     self.firstframe.sport,
+                                                     self.firstframe.dst_addr,
+                                                     self.firstframe.dport,
+                                                     time.strftime('%Y-%m-%dT%T', time.gmtime(self.firstframe.time)),
+                                                     self.firstframe.time_usec)
 
         if self.parts:
             dl = len(self.parts[-1])

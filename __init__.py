@@ -207,8 +207,6 @@ def unhex(s):
 
 
 def pp(value, bits=16):
-    if type(value) == type(''):
-        value, _ = unpack('<H', value)
     hexfmt = '%%0%dx' % (bits / 4)
     return '%6d  0x%s  %s' % (value, (hexfmt % value), bin(value, bits))
 
