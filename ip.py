@@ -23,6 +23,7 @@ def unpack_nybbles(byte):
 
 IP = 0x0800
 ARP = 0x0806
+VLAN = 0x8100
 
 ICMP = 1
 TCP  = 6
@@ -42,6 +43,8 @@ class Frame:
          self.eth_shost,
          self.eth_type,
          p) = unpack('!6s6sH', frame)
+        if self.eth_type == VLAN:
+            _, self.eth_type, p = unpack('!HH', p)
         if self.eth_type == ARP:
             # ARP
             self.name, self.protocol = ('ARP', ARP)
@@ -184,7 +187,7 @@ class TCP_Resequence:
         self.lastack = [None, None]
         self.first = None
         self.pending = [{}, {}]
-        self.closed = 0
+        self.closed = [False, False]
         self.midstream = False
         self.hash = 0
 
@@ -198,7 +201,7 @@ class TCP_Resequence:
         by __init__.  The current value of this function is the state.
         """
 
-        pass
+        raise NotImplementedError()
 
     def handle_handshake(self, pkt):
         if not self.first:
@@ -237,8 +240,12 @@ class TCP_Resequence:
         # Does this ACK after the last output sequence number?
         seq = self.lastack[idx]
         if pkt.ack > seq:
+            if self.closed[idx]:
+                # XXX: If the next thing happens, that means you need to
+                # return a gapstring to deal with dropped frames
+                assert (pkt.ack == seq + 1)
+                return
             pending = self.pending[xdi]
-
             # Get a sorted list of sequence numbers
             keys = pending.keys()
             keys.sort()
@@ -259,7 +266,11 @@ class TCP_Resequence:
                     # Hopefully just a retransmit...
                     del pending[key]
                     continue
+                elif key == seq:
+                    # Default
+                    pass
                 elif key > seq:
+                    # Dropped frame(s)
                     gs.append(key - seq)
                     seq = key
                 frame = pending[key]
@@ -267,6 +278,7 @@ class TCP_Resequence:
                 seq += len(frame.payload)
                 del pending[key]
             if seq != pkt.ack:
+                # Drop at the end
                 gs.append(pkt.ack - seq)
             self.lastack[idx] = pkt.ack
 
@@ -276,14 +288,12 @@ class TCP_Resequence:
 
         # Is it a FIN or RST?
         if pkt.flags & (FIN | RST):
-            self.lastack[xdi] = pkt.seq + 1
-            self.closed += 1
-            if self.closed == 2:
+            self.closed[idx] = True
+            if self.closed == 3:
                 # Warn about any unhandled packets
                 if self.pending[0] or self.pending[1]:
                     warnings.warn('Dropping unhandled frames after shutdown' % pkt)
                 self.handle = self.handle_drop
-            ret = None
 
         return ret
 

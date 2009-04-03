@@ -30,26 +30,29 @@ class GapString:
             self.length += len(i)
             self.contents.append(i)
         except TypeError:
-            self.length += int(i)
-            self.contents.append(int(i))
+            self.length += i
+            self.contents.append(long(i))
 
     def __str__(self):
         ret = []
         for i in self.contents:
-            if isinstance(i, int):
+            try:
                 ret.append(self.drop * i)
-            else:
+            except TypeError:
                 ret.append(i)
         return ''.join(ret)
 
     def __iter__(self):
         for i in self.contents:
-            if isinstance(i, int):
-                for j in range(i):
-                    yield self.drop
-            else:
+            try:
                 for c in i:
                     yield c
+            except TypeError:
+                for j in range(i):
+                    yield self.drop
+
+    def __nonzero__(self):
+        return self.length > 0
 
     def hasgaps(self):
         for i in self.contents:
@@ -62,10 +65,10 @@ class GapString:
 
         d = __init__.HexDumper(fd)
         for i in self.contents:
-            if isinstance(i, int):
+            try:
                 for j in range(i):
                     d.dump_drop()
-            else:
+            except TypeError:
                 for c in i:
                     d.dump_chr(c)
         d.finish()
@@ -90,11 +93,11 @@ class GapString:
         # Trim off the beginning
         while start >= 0:
             i = new.contents.pop(0)
-            if isinstance(i, int):
+            try:
                 start -= i
                 if start < 0:
                     new.contents.insert(0, -start)
-            else:
+            except TypeError:
                 start -= len(i)
                 if start < 0:
                     new.contents.insert(0, i[start:])
@@ -102,11 +105,11 @@ class GapString:
         # Trim off the end
         while l >= 0:
             i = new.contents.pop()
-            if isinstance(i, int):
+            try:
                 l -= i
                 if l < 0:
                     new.contents.append(-l)
-            else:
+            except TypeError:
                 l -= len(i)
                 if l < 0:
                     new.contents.append(i[:-l])
@@ -127,17 +130,15 @@ class GapString:
             return new
 
     def __xor__(self, mask):
-        if isinstance(mask, int):
-            mask = [mask]
-        if isinstance(mask, str) or isinstance(mask, GapString):
+        try:
             mask = [ord(c) for c in mask]
+        except TypeError:
+            mask = [mask]
         masklen = len(mask)
 
         new = self.__class__(drop=self.drop)
         for i in self.contents:
-            if isinstance(i, int):
-                new.append(i)
-            else:
+            try:
                 r = []
                 offset = len(new) % masklen
                 for c in i:
@@ -145,8 +146,12 @@ class GapString:
                     r.append(chr(o ^ mask[offset]))
                     offset = (offset + 1) % masklen
                 new.append(''.join(r))
+            except TypeError:
+                new.append(i)
         return new
 
+    def startswith(self, what):
+        return (what == str(self[:len(what)]))
 
 
 if __name__ == '__main__':

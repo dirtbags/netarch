@@ -115,16 +115,7 @@ def assert_in(a, *b):
 
 class BitVector:
     def __init__(self, i=0, length=None):
-        if type(i) == type(1):
-            self._val = i
-            if length is not None:
-                self._len = length
-            else:
-                self._len = 0
-                while i > 0:
-                    i >>= 1
-                    self._len += 1
-        else:
+        try:
             self._val = 0
             for c in i:
                 self._val <<= 8
@@ -133,6 +124,15 @@ class BitVector:
                 self._len = length
             else:
                 self._len = len(i) * 8
+        except TypeError:
+            self._val = i
+            if length is not None:
+                self._len = length
+            else:
+                self._len = 0
+                while i > 0:
+                    i >>= 1
+                    self._len += 1
 
     def __len__(self):
         return self._len

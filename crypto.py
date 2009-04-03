@@ -163,7 +163,7 @@ def neighbors(txt):
 ##
 
 def rot(n, txt):
-    """Caesar cipher"""
+    """Caesar cipher only across letters"""
 
     out = ""
     for c in txt:
@@ -178,8 +178,11 @@ def rot(n, txt):
     return out
 
 
+def caesar(n, txt):
+    return [chr((ord(c) + n) % 256) for c in txt]
+
 def caesars(txt):
-    return [rot(i, txt) for i in range(26)]
+    return [caesar(i, txt) for i in range(256)]
 
 # Tabula recta
 tabula_recta = caesars('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
