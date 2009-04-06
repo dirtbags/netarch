@@ -240,11 +240,6 @@ class TCP_Resequence:
         # Does this ACK after the last output sequence number?
         seq = self.lastack[idx]
         if pkt.ack > seq:
-            if self.closed[idx]:
-                # XXX: If the next thing happens, that means you need to
-                # return a gapstring to deal with dropped frames
-                assert (pkt.ack == seq + 1)
-                return
             pending = self.pending[xdi]
             # Get a sorted list of sequence numbers
             keys = pending.keys()
@@ -261,22 +256,27 @@ class TCP_Resequence:
             # Fill in gs with our frames
             for key in keys:
                 if key >= pkt.ack:
+                    # In the future
                     break
-                if key < seq:
-                    # Hopefully just a retransmit...
-                    del pending[key]
-                    continue
                 elif key == seq:
                     # Default
-                    pass
+                    frame = pending[key]
+                    gs.append(frame.payload)
+                    seq += len(frame.payload)
+                    del pending[key]
+                elif key < seq:
+                    # Hopefully just a retransmit.  Anyway we've already
+                    # claimed to have data (or a drop) for this packet.
+                    del pending[key]
+                    continue
                 elif key > seq:
                     # Dropped frame(s)
                     gs.append(key - seq)
                     seq = key
-                frame = pending[key]
-                gs.append(frame.payload)
-                seq += len(frame.payload)
-                del pending[key]
+            print (seq, pkt.ack, self.closed[idx], self.closed[xdi])
+            if self.closed[idx]:
+                # FIN increments the sequence number
+                seq += 1
             if seq != pkt.ack:
                 # Drop at the end
                 gs.append(pkt.ack - seq)
@@ -289,7 +289,7 @@ class TCP_Resequence:
         # Is it a FIN or RST?
         if pkt.flags & (FIN | RST):
             self.closed[idx] = True
-            if self.closed == 3:
+            if self.closed == [True, True]:
                 # Warn about any unhandled packets
                 if self.pending[0] or self.pending[1]:
                     warnings.warn('Dropping unhandled frames after shutdown' % pkt)
@@ -555,7 +555,6 @@ class Session:
 
         """
 
-        print 'Lastpos: %s:::%d' % self.lastpos
         packet.show()
 
     def done(self):
