@@ -20,7 +20,7 @@ class GapString:
             self.append(init)
 
     def __len__(self):
-        return self.length
+        return int(self.length)
 
     def __repr__(self):
         return '<GapString of length %d>' % self.length
@@ -31,7 +31,7 @@ class GapString:
             self.contents.append(i)
         except TypeError:
             self.length += i
-            self.contents.append(long(i))
+            self.contents.append(i)
 
     def __str__(self):
         ret = []
@@ -149,6 +149,31 @@ class GapString:
             except TypeError:
                 new.append(i)
         return new
+
+    def index(self, needle):
+        pos = 0
+        for i in self.contents:
+            try:
+                return pos + i.index(needle)
+            except AttributeError:
+                pos += i
+            except ValueError:
+                pos += len(i)
+        raise ValueError('substring not found')
+
+    def split(self, pivot=' ', times=None):
+        ret = []
+        n = 0
+        cur = self
+        while (not times) or (n < times):
+            try:
+                pos = cur.index(pivot)
+            except ValueError:
+                break
+            ret.append(cur[:pos])
+            cur = cur[pos+len(pivot):]
+        ret.append(cur)
+        return ret
 
     def startswith(self, what):
         return (what == str(self[:len(what)]))
