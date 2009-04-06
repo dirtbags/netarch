@@ -231,11 +231,12 @@ class TCP_Resequence:
             self.handle(pkt)
 
     def handle_packet(self, pkt):
-        ret = None
-
         # Which way is this going?  0 == from client
         idx = int(pkt.src == self.srv)
         xdi = 1 - idx
+
+        # Stick it into pending
+        self.pending[idx][pkt.seq] = pkt
 
         # Does this ACK after the last output sequence number?
         seq = self.lastack[idx]
@@ -258,7 +259,12 @@ class TCP_Resequence:
                 if key >= pkt.ack:
                     # In the future
                     break
-                elif key == seq:
+                if pkt.flags & (FIN | RST):
+                    seq += 1
+                    self.closed[idx] = True
+                    if self.closed == [True, True]:
+                        self.handle = self.handle_drop
+                if key == seq:
                     # Default
                     frame = pending[key]
                     gs.append(frame.payload)
@@ -282,20 +288,7 @@ class TCP_Resequence:
                 gs.append(pkt.ack - seq)
             self.lastack[idx] = pkt.ack
 
-        # If it has a payload, stick it into pending
-        if pkt.payload:
-            self.pending[idx][pkt.seq] = pkt
-
-        # Is it a FIN or RST?
-        if pkt.flags & (FIN | RST):
-            self.closed[idx] = True
-            if self.closed == [True, True]:
-                # Warn about any unhandled packets
-                if self.pending[0] or self.pending[1]:
-                    warnings.warn('Dropping unhandled frames after shutdown' % pkt)
-                self.handle = self.handle_drop
-
-        return ret
+            return ret
 
     def handle_drop(self, pkt):
         """Warn about any unhandled packets"""
