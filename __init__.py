@@ -5,7 +5,6 @@
 
 import sys
 import struct
-import gapstr, ip, crypto
 
 printable = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*()[]{}`~/=-\\?+|\',."<>: _'
 
