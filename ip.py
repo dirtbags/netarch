@@ -240,6 +240,7 @@ class TCP_Resequence:
 
         # Does this ACK after the last output sequence number?
         seq = self.lastack[idx]
+        self.lastack[idx] = pkt.ack
         if pkt.ack > seq:
             pending = self.pending[xdi]
             # Get a sorted list of sequence numbers
@@ -259,14 +260,13 @@ class TCP_Resequence:
                 if key >= pkt.ack:
                     # In the future
                     break
-                if pkt.flags & (FIN | RST):
-                    seq += 1
-                    self.closed[idx] = True
-                    if self.closed == [True, True]:
-                        self.handle = self.handle_drop
+                frame = pending[key]
+                if key > seq:
+                    # Dropped frame(s)
+                    gs.append(key - seq)
+                    seq = key
                 if key == seq:
                     # Default
-                    frame = pending[key]
                     gs.append(frame.payload)
                     seq += len(frame.payload)
                     del pending[key]
@@ -274,19 +274,14 @@ class TCP_Resequence:
                     # Hopefully just a retransmit.  Anyway we've already
                     # claimed to have data (or a drop) for this packet.
                     del pending[key]
-                    continue
-                elif key > seq:
-                    # Dropped frame(s)
-                    gs.append(key - seq)
-                    seq = key
-            print (seq, pkt.ack, self.closed[idx], self.closed[xdi])
-            if self.closed[idx]:
-                # FIN increments the sequence number
-                seq += 1
+                if frame.flags & (FIN | RST):
+                    seq += 1
+                    self.closed[idx] = True
+                    if self.closed == [True, True]:
+                        self.handle = self.handle_drop
             if seq != pkt.ack:
                 # Drop at the end
                 gs.append(pkt.ack - seq)
-            self.lastack[idx] = pkt.ack
 
             return ret
 
