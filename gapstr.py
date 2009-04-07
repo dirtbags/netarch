@@ -178,6 +178,9 @@ class GapString:
     def startswith(self, what):
         return (what == str(self[:len(what)]))
 
+    def endswith(self, what):
+        return (what == str(self[-len(what):]))
+
 
 if __name__ == '__main__':
     gs = GapString()
