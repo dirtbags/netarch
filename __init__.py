@@ -213,9 +213,15 @@ def pp(value, bits=16):
 ##
 ## Codecs
 ##
-
 import codecs
-from __init__ import BitVector
+import string
+
+b64alpha = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+
+def from_b64(s, alphabet, codec='base64'):
+    tr = string.maketrans(alphabet, b64alpha)
+    t = s.translate(tr)
+    return t.decode(codec)
 
 class Esab64Codec(codecs.Codec):
     """Little-endian version of base64."""

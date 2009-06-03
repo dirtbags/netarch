@@ -276,7 +276,8 @@ class TCP_Resequence:
                     del pending[key]
                 if frame.flags & (FIN | RST):
                     seq += 1
-                    self.closed[idx] = True
+                if frame.flags & (FIN | ACK) == FIN | ACK:
+                    self.closed[xdi] = True
                     if self.closed == [True, True]:
                         self.handle = self.handle_drop
             if seq != pkt.ack:
@@ -288,8 +289,15 @@ class TCP_Resequence:
     def handle_drop(self, pkt):
         """Warn about any unhandled packets"""
 
+        if pkt.flags & SYN:
+            # Re-using ports!
+            self.__init__()
+            return self.handle(pkt)
+
         if pkt.payload:
             warnings.warn('Spurious frame after shutdown: %r %d' % (pkt, pkt.flags))
+            hexdump(pkt.payload)
+            merf
 
 
 class Dispatch:
