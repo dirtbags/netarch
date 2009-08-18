@@ -87,6 +87,7 @@ class Frame:
                  self.sum,
                  self.urp,
                  p) = unpack("!HHLLBBHHH", p)
+                assert self.seq != self.ack
                 (self.off, th_x2) = unpack_nybbles(x2off)
                 opt_length = self.off * 4
                 self.options, p = p[:opt_length - 20], p[opt_length - 20:]
@@ -152,6 +153,100 @@ class Frame:
                                                 str_of_eth(self.ar_tha),
                                                 self.dst_addr)
 
+class TCP_Recreate:
+    def __init__(self, pcap, src, dst):
+        self.pcap = pcap
+        self.src = (socket.inet_aton(src[0]), src[1])
+        self.dst = (socket.inet_aton(dst[0]), dst[1])
+        self.sid = self.did = 0
+        self.sseq = self.dseq = 0
+        self.closed = True
+        self.lastts = 0
+        self.write_header()
+
+    def write_header(self):
+        p = '\0\0\0\0\0\0\0\0\0\0\0\0\xfe\xed'
+        self.pcap.write(((0,0,len(p)), p))
+
+    def packet(self, cli, payload, flags=0):
+        if cli:
+            sip, sport = self.src
+            dip, dport = self.dst
+            id = self.sid
+            self.sid += 1
+            seq = self.sseq
+            self.sseq += len(payload)
+            if flags & (SYN|FIN):
+                self.sseq += 1
+            ack = self.dseq
+        else:
+            sip, sport = self.dst
+            dip, dport = self.src
+            id = self.did
+            self.did += 1
+            seq = self.dseq
+            self.dseq += len(payload)
+            if flags & (SYN|FIN):
+                self.dseq += 1
+            ack = self.sseq
+        ethhdr = struct.pack('!6s6sH',
+                             '\x11\x11\x11\x11\x11\x11',
+                             '\x22\x22\x22\x22\x22\x22',
+                             IP)
+
+        iphdr = struct.pack('!BBHHHBBH4s4s',
+                            0x45, # Version, Header length/32
+                            0,    # Differentiated services / ECN
+                            40+len(payload), # total size
+                            #40,
+                            id,
+                            0x4000, # Don't fragment, no fragment offset
+                            6,      # TTL
+                            TCP,    # Protocol
+                            0,      # Header checksum
+                            sip,
+                            dip)
+        shorts = struct.unpack('!hhhhhhhhhh', iphdr)
+        ipsum = struct.pack('!h', ~(sum(shorts)) & 0xffff)
+        iphdr = iphdr[:10] + ipsum + iphdr[12:]
+
+        tcphdr = struct.pack('!HHLLBBHHH',
+                             sport,
+                             dport,
+                             seq,    # Sequence number
+                             ack,    # Acknowledgement number
+                             0x50,   # Data offset
+                             flags,  # Flags
+                             0x1000, # Window size
+                             0,      # Checksum
+                             0)      # Urgent pointer
+
+
+
+        return ethhdr + iphdr + tcphdr + payload
+
+    def write_pkt(self, timestamp, cli, payload, flags=0):
+        p = self.packet(cli, payload, flags)
+        frame = (timestamp + (len(p),), p)
+        self.pcap.write(frame)
+        self.lastts = timestamp
+
+    def write(self, timestamp, cli, data):
+        self.write_pkt(timestamp, cli, data, ACK)
+
+    def handshake(self, timestamp):
+        self.write_pkt(timestamp, True, '', SYN)
+        self.write_pkt(timestamp, False, '', SYN|ACK)
+        #self.write_pkt(timestamp, True, '', ACK)
+
+    def close(self):
+        self.write_pkt(self.lastts, True, '', FIN|ACK)
+        self.write_pkt(self.lastts, False, '', FIN|ACK)
+        self.write_pkt(self.lastts, True, '', ACK)
+
+    def __del__(self):
+        if not self.closed:
+            self.close()
 
 FIN = 1
 SYN = 2
@@ -282,6 +377,9 @@ class TCP_Resequence:
                         self.handle = self.handle_drop
             if seq != pkt.ack:
                 # Drop at the end
+                if pkt.ack - seq > 6000:
+                    print(pkt, pkt.time)
+                    print('%x  %x' % (pkt.ack, seq))
                 gs.append(pkt.ack - seq)
 
             return ret
@@ -297,7 +395,6 @@ class TCP_Resequence:
         if pkt.payload:
             warnings.warn('Spurious frame after shutdown: %r %d' % (pkt, pkt.flags))
             hexdump(pkt.payload)
-            merf
 
 
 class Dispatch:
@@ -376,6 +473,7 @@ class Packet(UserDict.DictMixin):
         self.parts = []
         self.params = {}
         self.payload = None
+        self.subpackets = []
 
     def __repr__(self):
         r = '<%s packet opcode=%s' % (self.__class__.__name__, self.opcode)
@@ -443,7 +541,10 @@ class Packet(UserDict.DictMixin):
         for k in keys:
             print '    %12s: %s' % (k, self.params[k])
 
-        if self.payload:
+        if self.subpackets:
+            for p in self.subpackets:
+                p.show()
+        elif self.payload:
             try:
                 self.payload.hexdump()
             except AttributeError:
