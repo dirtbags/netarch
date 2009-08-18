@@ -2,9 +2,9 @@
 
 ## 2008 Massive Blowout
 
-"""Functions to treat a list as a string with gaps.
+"""Functions to treat a list as a byte array with gaps.
 
-Lists should have only string and integer items.
+Lists should have only byte and numeric items.
 
 """
 
@@ -56,7 +56,9 @@ class GapString:
 
     def hasgaps(self):
         for i in self.contents:
-            if isinstance(i, int):
+            try:
+                len(i)
+            except TypeError:
                 return True
         return False
 
@@ -66,7 +68,7 @@ class GapString:
         d = __init__.HexDumper(fd)
         for i in self.contents:
             try:
-                for j in range(i):
+                for j in xrange(i):
                     d.dump_drop()
             except TypeError:
                 for c in i:
@@ -117,8 +119,26 @@ class GapString:
         return new
 
     def __getitem__(self, idx):
-        # XXX: speed up
-        return str(self)[idx]
+        if False:
+            c = self[idx:idx+1]
+            if c.hasgaps():
+                return self.drop[0]
+            else:
+                return c.contents[0][0]
+        else:
+            l = 0
+            for i in self.contents:
+                try:
+                    l += len(i)
+                except TypeError:
+                    l += i
+                if l > idx:
+                    offs = idx - l
+                    try:
+                        return i[offs]
+                    except:
+                        return self.drop[0]
+            raise IndexError('Out of bounds')
 
     def __add__(self, other):
         if isinstance(other, str):
@@ -133,8 +153,12 @@ class GapString:
         try:
             mask = [ord(c) for c in mask]
         except TypeError:
+            pass
+        try:
+            masklen = len(mask)
+        except TypeError:
+            masklen = 1
             mask = [mask]
-        masklen = len(mask)
 
         new = self.__class__(drop=self.drop)
         for i in self.contents:
@@ -147,6 +171,7 @@ class GapString:
                     offset = (offset + 1) % masklen
                 new.append(''.join(r))
             except TypeError:
+                print("type error!")
                 new.append(i)
         return new
 

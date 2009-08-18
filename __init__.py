@@ -6,7 +6,75 @@
 import sys
 import struct
 
-printable = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*()[]{}`~/=-\\?+|\',."<>: _'
+stdch = (u'␀·········␊··␍··'
+         u'················'
+         u' !"#$%&\'()*+,-./'
+         u'0123456789:;<=>?'
+         u'@ABCDEFGHIJKLMNO'
+         u'PQRSTUVWXYZ[\]^_'
+         u'`abcdefghijklmno'
+         u'pqrstuvwxyz{|}~·'
+         u'················'
+         u'················'
+         u'················'
+         u'················'
+         u'················'
+         u'················'
+         u'················'
+         u'················')
+
+decch = (u'␀␁␂␃␄␅␆␇␈␉␊␋␌␍␎␏'
+         u'␐␑␒␓␔␕␖␗␘␙␚·····'
+         u'␠!"#$%&\'()*+,-./'
+         u'0123456789:;<=>?'
+         u'@ABCDEFGHIJKLMNO'
+         u'PQRSTUVWXYZ[\]^_'
+         u'`abcdefghijklmno'
+         u'pqrstuvwxyz{|}~␡'
+         u'················'
+         u'················'
+         u'················'
+         u'················'
+         u'················'
+         u'················'
+         u'················'
+         u'················')
+
+cgach = (u'␀☺☻♥♦♣♠•◘○◙♂♀♪♫☼'
+         u'►◄↕‼¶§▬↨↑↓→←∟↔▲▼'
+         u'␣!"#$%&\'()*+,-./'
+         u'0123456789:;<=>?'
+         u'@ABCDEFGHIJKLMNO'
+         u'PQRSTUVWXYZ[\]^_'
+         u'`abcdefghijklmno'
+         u'pqrstuvwxyz{|}~⌂'
+         u'ÇüéâäàåçêëèïîìÄÅ'
+         u'ÉæÆôöòûùÿÖÜ¢£¥₧ƒ'
+         u'áíóúñÑªº¿⌐¬½¼¡«»'
+         u'░▒▓│┤╡╢╖╕╣║╗╝╜╛┐'
+         u'└┴┬├─┼╞╟╚╔╩╦╠═╬╧'
+         u'╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀'
+         u'αßΓπΣσµτΦΘΩδ∞φε∩'
+         u'≡±≥≤⌠⌡÷≈°∙·√ⁿ²■¤')
+
+shpch = (u'␀☺☻♥♦♣♠•◘○◙♂♀♪♫☼'
+         u'►◄↕‼¶§▬↨↑↓→←∟↔▲▼'
+         u'␣!"#$%&\'()*+,-./'
+         u'0123456789:;<=>?'
+         u'@ABCDEFGHIJKLMNO'
+         u'PQRSTUVWXYZ[\]^_'
+         u'`abcdefghijklmno'
+         u'pqrstuvwxyz{|}~⌂'
+         u'ÇüéâäàåçêëèïîìÄÅ'
+         u'ÉæÆôöòûùÿÖÜ¢£¥₧ƒ'
+         u'áíóúñÑªº¿⌐¬½¼¡«»'
+         u'░▒▓│┤╡╢╖╕╣║╗╝╜╛┐'
+         u'└┴┬├─┼╞╟╚╔╩╦╠═╬╧'
+         u'╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀'
+         u'αßΓπΣσµτΦΘΩδ∞φε∩'
+         u'≡±≥≤⌠⌡÷≈°∙·√ⁿ²■¤')
+
+
 
 def unpack(fmt, buf):
     """Unpack buf based on fmt, return the rest as a string."""
@@ -24,18 +92,13 @@ class HexDumper:
 
     def _to_printable(self, c):
         if not c:
-            return '◆'
-        elif c in printable:
-            return c
-        elif c == '\0':
-            return '␀'
-        elif c == '\r':
-            return '␍'
-        elif c == '\n':
-            return '␤'
+            return u'◌'
         else:
-            return '·'
+            return cgach[ord(c)]
 
+
+    def write(self, what):
+        self.fd.write(what.encode('utf-8'))
 
     def _flush(self):
         if not self.buf:
@@ -44,26 +107,26 @@ class HexDumper:
         o = []
         for c in self.buf:
             if c:
-                o.append('%02x' % ord(c))
+                o.append(u'%02x' % ord(c))
             else:
-                o.append('--')
-        o +=  (['  '] * (16 - len(self.buf)))
+                o.append(u'--')
+        o +=  ([u'  '] * (16 - len(self.buf)))
         p = [self._to_printable(c) for c in self.buf]
 
-        self.fd.write('%08x  ' % self.offset)
+        self.write(u'%08x  ' % self.offset)
 
-        self.fd.write(' '.join(o[:8]))
-        self.fd.write('  ')
-        self.fd.write(' '.join(o[8:]))
+        self.write(u' '.join(o[:8]))
+        self.write(u'  ')
+        self.write(u' '.join(o[8:]))
 
-        self.fd.write('  ║')
+        self.write(u'  ┆')
 
-        self.fd.write(''.join(p))
+        self.write(u''.join(p))
 
-        self.fd.write('║\n')
+        self.write(u'┆\n')
 
+        self.offset += len(self.buf)
         self.buf = []
-        self.offset += 16
 
     def dump_chr(self, c):
         self.buf.append(c)
@@ -77,7 +140,7 @@ class HexDumper:
 
     def finish(self):
         self._flush()
-        self.fd.write('%08x\n' % self.offset)
+        self.write('%08x\n' % self.offset)
 
 
 def hexdump(buf, f=sys.stdout):
