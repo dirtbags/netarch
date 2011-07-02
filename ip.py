@@ -10,7 +10,10 @@ import warnings
 import heapq
 import gapstr
 import time
-import pcap
+try:
+    import pcap
+except ImportError:
+    import py_pcap as pcap
 import os
 import cgi
 import urllib
@@ -20,6 +23,8 @@ from __init__ import *
 def unpack_nybbles(byte):
     return (byte >> 4, byte & 0x0F)
 
+
+transfers = os.environ.get('TRANSFERS', 'transfers')
 
 IP = 0x0800
 ARP = 0x0806
@@ -87,7 +92,6 @@ class Frame:
                  self.sum,
                  self.urp,
                  p) = unpack("!HHLLBBHHH", p)
-                assert self.seq != self.ack
                 (self.off, th_x2) = unpack_nybbles(x2off)
                 opt_length = self.off * 4
                 self.options, p = p[:opt_length - 20], p[opt_length - 20:]
@@ -154,15 +158,17 @@ class Frame:
                                                 self.dst_addr)
 
 class TCP_Recreate:
-    def __init__(self, pcap, src, dst):
+    closed = True
+
+    def __init__(self, pcap, src, dst, timestamp):
         self.pcap = pcap
         self.src = (socket.inet_aton(src[0]), src[1])
         self.dst = (socket.inet_aton(dst[0]), dst[1])
         self.sid = self.did = 0
-        self.sseq = self.dseq = 0
-        self.closed = True
+        self.sseq = self.dseq = 1
         self.lastts = 0
         self.write_header()
+        self.handshake(timestamp)
 
     def write_header(self):
         p = '\0\0\0\0\0\0\0\0\0\0\0\0\xfe\xed'
@@ -189,6 +195,8 @@ class TCP_Recreate:
             if flags & (SYN|FIN):
                 self.dseq += 1
             ack = self.sseq
+        if not (flags & ACK):
+            ack = 0
         ethhdr = struct.pack('!6s6sH',
                              '\x11\x11\x11\x11\x11\x11',
                              '\x22\x22\x22\x22\x22\x22',
@@ -198,7 +206,6 @@ class TCP_Recreate:
                             0x45, # Version, Header length/32
                             0,    # Differentiated services / ECN
                             40+len(payload), # total size
-                            #40,
                             id,
                             0x4000, # Don't fragment, no fragment offset
                             6,      # TTL
@@ -207,7 +214,8 @@ class TCP_Recreate:
                             sip,
                             dip)
         shorts = struct.unpack('!hhhhhhhhhh', iphdr)
-        ipsum = struct.pack('!h', ~(sum(shorts)) & 0xffff)
+        shsum = sum(shorts)
+        ipsum = struct.pack('!h', (~shsum & 0xffff) - 2) # -2? WTF?
         iphdr = iphdr[:10] + ipsum + iphdr[12:]
 
         tcphdr = struct.pack('!HHLLBBHHH',
@@ -217,13 +225,13 @@ class TCP_Recreate:
                              ack,    # Acknowledgement number
                              0x50,   # Data offset
                              flags,  # Flags
-                             0x1000, # Window size
+                             0xff00, # Window size
                              0,      # Checksum
                              0)      # Urgent pointer
 
 
 
-        return ethhdr + iphdr + tcphdr + payload
+        return ethhdr + iphdr + tcphdr + str(payload)
 
     def write_pkt(self, timestamp, cli, payload, flags=0):
         p = self.packet(cli, payload, flags)
@@ -232,7 +240,9 @@ class TCP_Recreate:
         self.lastts = timestamp
 
     def write(self, timestamp, cli, data):
-        self.write_pkt(timestamp, cli, data, ACK)
+        while data:
+            d, data = data[:0xff00], data[0xff00:]
+            self.write_pkt(timestamp, cli, d, ACK)
 
     def handshake(self, timestamp):
         self.write_pkt(timestamp, True, '', SYN)
@@ -289,14 +299,74 @@ class TCP_Resequence:
         self.handle = self.handle_handshake
 
 
+    def bundle_pending(self, xdi, pkt, seq):
+        """Bundle up any pending packets.
+
+        Called when a packet comes from a new direction, this is the thing responsible for
+        replaying TCP as a back-and-forth conversation.
+
+        """
+
+        pending = self.pending[xdi]
+        # Get a sorted list of sequence numbers
+        keys = pending.keys()
+        keys.sort()
+
+        # Build up return value
+        gs = gapstr.GapString()
+        if keys:
+            f = pending[keys[0]]
+            ret = (xdi, f, gs)
+        else:
+            ret = (xdi, None, gs)
+
+        # Fill in gs with our frames
+        for key in keys:
+            if key >= pkt.ack:
+                # In the future
+                break
+            frame = pending[key]
+            if key > seq:
+                # Dropped frame(s)
+                if key - seq > 6000:
+                    print "Gosh, bob, %d dropped octets sure is a lot!" % (key - seq)
+                gs.append(key - seq)
+                seq = key
+            if key == seq:
+                # Default
+                gs.append(frame.payload)
+                seq += len(frame.payload)
+                del pending[key]
+            elif key < seq:
+                # Hopefully just a retransmit.  Anyway we've already
+                # claimed to have data (or a drop) for this packet.
+                del pending[key]
+            if frame.flags & (FIN):
+                seq += 1
+            if frame.flags & (FIN | ACK) == FIN | ACK:
+                self.closed[xdi] = True
+                if self.closed == [True, True]:
+                    self.handle = self.handle_drop
+        if seq != pkt.ack:
+            # Drop at the end
+            if pkt.ack - seq > 6000:
+                print 'Large drop at end of session!'
+                print '    %s' % ((pkt, pkt.time),)
+                print '    %x  %x' % (pkt.ack, seq)
+            gs.append(pkt.ack - seq)
+
+        return ret
+
+
     def handle(self, pkt):
         """Stub.
 
         This function will never be called, it is immediately overridden
-        by __init__.  The current value of this function is the state.
+        by __init__.  The current value of self.handle is the state.
         """
 
         raise NotImplementedError()
+
 
     def handle_handshake(self, pkt):
         if not self.first:
@@ -325,64 +395,28 @@ class TCP_Resequence:
             self.handle = self.handle_packet
             self.handle(pkt)
 
+
     def handle_packet(self, pkt):
         # Which way is this going?  0 == from client
         idx = int(pkt.src == self.srv)
         xdi = 1 - idx
 
-        # Stick it into pending
-        self.pending[idx][pkt.seq] = pkt
+        if pkt.flags & RST:
+            # Handle RST before wonky sequence numbers screw up algorithm
+            self.closed = [True, True]
+            self.handle = self.handle_drop
 
-        # Does this ACK after the last output sequence number?
-        seq = self.lastack[idx]
-        self.lastack[idx] = pkt.ack
-        if pkt.ack > seq:
-            pending = self.pending[xdi]
-            # Get a sorted list of sequence numbers
-            keys = pending.keys()
-            keys.sort()
+            return self.bundle_pending(xdi, pkt, self.lastack[idx])
+        else:
+            # Stick it into pending
+            self.pending[idx][pkt.seq] = pkt
 
-            # Build up return value
-            gs = gapstr.GapString()
-            if keys:
-                f = pending[keys[0]]
-                ret = (xdi, f, gs)
-            else:
-                ret = (xdi, None, gs)
+            # Does this ACK after the last output sequence number?
+            seq = self.lastack[idx]
+            self.lastack[idx] = pkt.ack
+            if pkt.ack > seq:
+                return self.bundle_pending(xdi, pkt, seq)
 
-            # Fill in gs with our frames
-            for key in keys:
-                if key >= pkt.ack:
-                    # In the future
-                    break
-                frame = pending[key]
-                if key > seq:
-                    # Dropped frame(s)
-                    gs.append(key - seq)
-                    seq = key
-                if key == seq:
-                    # Default
-                    gs.append(frame.payload)
-                    seq += len(frame.payload)
-                    del pending[key]
-                elif key < seq:
-                    # Hopefully just a retransmit.  Anyway we've already
-                    # claimed to have data (or a drop) for this packet.
-                    del pending[key]
-                if frame.flags & (FIN | RST):
-                    seq += 1
-                if frame.flags & (FIN | ACK) == FIN | ACK:
-                    self.closed[xdi] = True
-                    if self.closed == [True, True]:
-                        self.handle = self.handle_drop
-            if seq != pkt.ack:
-                # Drop at the end
-                if pkt.ack - seq > 6000:
-                    print(pkt, pkt.time)
-                    print('%x  %x' % (pkt.ack, seq))
-                gs.append(pkt.ack - seq)
-
-            return ret
 
     def handle_drop(self, pkt):
         """Warn about any unhandled packets"""
@@ -591,8 +625,8 @@ class Session:
     def __init__(self, frame):
         self.firstframe = frame
         self.lastframe = [None, None]
-        self.basename = 'transfers/%s' % (frame.src_addr,)
-        self.basename2 = 'transfers/%s' % (frame.dst_addr,)
+        self.basename = os.path.join(transfers, frame.src_addr)
+        self.basename2 = os.path.join(transfers, frame.dst_addr)
         self.pending = {}
         self.count = 0
         for d in (self.basename, self.basename2):
@@ -639,7 +673,7 @@ class Session:
                 self.pending[saddr] = (f, data)
             self.count += 1
         except:
-            print 'Lastpos: %s:::%d' % lastpos
+            print ('Lastpos: %r' % (lastpos,))
             raise
 
     def process(self, packet):
@@ -667,7 +701,7 @@ class Session:
                                       urllib.quote(fn, ''))
         fullfn = os.path.join(self.basename, fn)
         fullfn2 = os.path.join(self.basename2, fn)
-        print 'writing %s' % (fn,)
+        print '  writing %s' % (fn,)
         fd = file(fullfn, 'w')
         try:
             os.unlink(fullfn2)
@@ -696,6 +730,7 @@ class HtmlSession(Session):
 <head>
   <title>%s</title>
   <style type="text/css">
+    .time { float: right; margin-left: 1em; font-size: 75%%; }
     .server { background-color: white; color: black; }
     .client { background-color: #884; color: white; }
   </style>
@@ -720,6 +755,12 @@ class HtmlSession(Session):
             cls = 'server'
         else:
             cls = 'client'
-        self.sessfd.write('<span class="%s" title="%s(%s)">' % (cls, time.ctime(frame.time), frame.time))
+
+        if False:
+            self.sessfd.write('<span class="%s" title="%s(%s)">' % (cls, time.ctime(frame.time), frame.time))
+        else:
+            ts = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(frame.time))
+            self.sessfd.write('<span class="time %s">%s</span><span class="%s">' % (cls, ts, cls))
         self.sessfd.write(p.replace('\r\n', '\n'))
         self.sessfd.write('</span>')
+            

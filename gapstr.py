@@ -16,11 +16,21 @@ class GapString:
         self.contents = []
         self.length = 0
         self.drop = drop
+
         if init:
             self.append(init)
 
     def __len__(self):
         return int(self.length)
+
+    def loss(self):
+        ret = 0
+        for i in self.contents:
+            try:
+                ret += i
+            except TypeError:
+                pass
+        return ret
 
     def __repr__(self):
         return '<GapString of length %d>' % self.length
@@ -32,6 +42,15 @@ class GapString:
         except TypeError:
             self.length += i
             self.contents.append(i)
+
+    def pop(self, idx=-1):
+        item = self.contents.pop(idx)
+        try:
+            self.length -= item
+        except TypeError:
+            self.length -= len(item)
+        return GapString(item)
+        
 
     def __str__(self):
         ret = []
@@ -171,7 +190,6 @@ class GapString:
                     offset = (offset + 1) % masklen
                 new.append(''.join(r))
             except TypeError:
-                print("type error!")
                 new.append(i)
         return new
 
@@ -188,9 +206,8 @@ class GapString:
 
     def split(self, pivot=' ', times=None):
         ret = []
-        n = 0
         cur = self
-        while (not times) or (n < times):
+        while (not times) or (len(ret) < times):
             try:
                 pos = cur.index(pivot)
             except ValueError:
