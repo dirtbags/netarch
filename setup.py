@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+from distutils.core import setup
 
 setup(
     name="netarch",
@@ -10,12 +10,12 @@ setup(
     license=open("COPYING.txt").read(),
     keywords="network protocol dissection cryptanalysis",
     url="http://woozle.org/~neale/projects/netarch",
-    packages=find_packages(),
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Information Technology",
         "License :: Other/Proprietary License",
         "Programming Language :: Python :: 2 :: Only",
         "Topic :: System :: Networking"
-    ]
+    ],
+    packages=['netarch'],
 )
