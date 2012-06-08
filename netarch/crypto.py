@@ -2,7 +2,6 @@
 
 ## Codebreaking tools
 ## 2007  Massive Blowout
-## I should get an LAUR for this so we can share it.
 
 from sets import Set
 from pprint import pprint
@@ -62,10 +61,12 @@ def isPrime(number):
             if number - 1 == x:
                 return False
 
+
 def smallestFactor(number):
     for x in range(2, number):
         if number % x == 0:
             return x
+
 
 def factor(number):
     """Return prime factors for number"""
@@ -106,7 +107,7 @@ def ngrams(n, haystack, min=2, repeats=False):
                     break
             if d != c:
                 continue
-        if not acc.has_key(needle):
+        if needle not in acc:
             found = where(rtxt, needle)
             if len(found) >= min:
                 acc[needle] = found
@@ -116,8 +117,10 @@ def ngrams(n, haystack, min=2, repeats=False):
 def freq(txt):
     return ngrams(1, txt, min=0)
 
+
 def bigrams(txt):
     return ngrams(2, txt)
+
 
 def trigrams(txt):
     return ngrams(3, txt)
@@ -134,20 +137,19 @@ def freqgraph(f):
         else:
             return 0
     items = []
-    for c,n in f.iteritems():
+    for c, n in f.iteritems():
         if type(n) != type(0):
             n = len(n)
-        items.append((c,n))
+        items.append((c, n))
     items.sort(cmp2)
 
-    for c,n in items:
+    for c, n in items:
         print '%s: %s' % (c, '#' * n)
+
 
 def neighbors(txt):
     out = {}
     for dg, w in bigrams(txt).iteritems():
-        count = len(w)
-
         n = out.get(dg[0], Set())
         n.add(dg[1])
         out[dg[0]] = n
@@ -181,6 +183,7 @@ def rot(n, txt):
 def caesar(n, txt):
     return [chr((ord(c) + n) % 256) for c in txt]
 
+
 def caesars(txt):
     return [caesar(i, txt) for i in range(256)]
 
@@ -193,6 +196,7 @@ def xor(n, txt):
         return txt
     out = [(chr(ord(c) ^ n)) for c in txt]
     return ''.join(out)
+
 
 def xors(txt):
     ret = []
@@ -208,6 +212,7 @@ def add(n, txt):
         out += chr(o)
     return out
 
+
 def adds(txt):
     ret = []
     for n in range(256):
@@ -215,7 +220,7 @@ def adds(txt):
     return ret
 
 
-class XorMask:
+class XorMask(object):
     def __init__(self, mask, stick=False):
         self.offset = 0
         if type(mask) == type(''):
@@ -259,6 +264,7 @@ def matches(str, tgt):
 
     return True
 
+
 def guess(pattern):
     ret = []
 
@@ -274,6 +280,7 @@ def guess(pattern):
 ##
 ## Overview tools
 ##
+
 
 def summary(txt):
     print "Length", len(txt)

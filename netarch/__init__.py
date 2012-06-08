@@ -3,6 +3,7 @@
 
 ## 2008 Massive Blowout
 
+import md5
 import sys
 import struct
 
@@ -84,7 +85,7 @@ def unpack(fmt, buf):
     return vals + (buf[size:],)
 
 
-class HexDumper:
+class HexDumper(object):
     def __init__(self, fd=sys.stdout):
         self.fd = fd
         self.offset = 0
@@ -110,7 +111,7 @@ class HexDumper:
                 o.append(u'%02x' % ord(c))
             else:
                 o.append(u'--')
-        o +=  ([u'  '] * (16 - len(self.buf)))
+        o += ([u'  '] * (16 - len(self.buf)))
         p = [self._to_printable(c) for c in self.buf]
 
         self.write(u'%08x  ' % self.offset)
@@ -176,7 +177,7 @@ def assert_in(a, *b):
 ## Binary and other base conversions
 ##
 
-class BitVector:
+class BitVector(object):
     def __init__(self, i=0, length=None):
         try:
             self._val = 0
@@ -281,10 +282,12 @@ import string
 
 b64alpha = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 
+
 def from_b64(s, alphabet, codec='base64'):
     tr = string.maketrans(alphabet, b64alpha)
     t = s.translate(tr)
     return t.decode(codec)
+
 
 class Esab64Codec(codecs.Codec):
     """Little-endian version of base64."""
@@ -296,11 +299,12 @@ class Esab64Codec(codecs.Codec):
     ## slow.
 
     b64_chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+
     def decode(self, input, errors='strict'):
         r = []
         for i in range(0, len(input), 4):
             v = BitVector()
-            for c in input[i:i+4]:
+            for c in input[i:i + 4]:
                 if c in ('=', ' ', '\n'):
                     break
                 v += BitVector(self.b64_chars.index(c), 6)
@@ -320,8 +324,10 @@ class Esab64Codec(codecs.Codec):
 class Esab64StreamWriter(Esab64Codec, codecs.StreamWriter):
     pass
 
+
 class Esab64StreamReader(Esab64Codec, codecs.StreamReader):
     pass
+
 
 def _registry(encoding):
     if encoding == 'esab64':

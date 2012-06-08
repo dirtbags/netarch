@@ -8,10 +8,12 @@ Lists should have only byte and numeric items.
 
 """
 
-import __init__
+from . import HexDumper
 import sys
+import string
 
-class GapString:
+
+class GapString(object):
     def __init__(self, init=None, drop='?'):
         self.contents = []
         self.length = 0
@@ -50,7 +52,6 @@ class GapString:
         except TypeError:
             self.length -= len(item)
         return GapString(item)
-        
 
     def __str__(self):
         ret = []
@@ -82,9 +83,7 @@ class GapString:
         return False
 
     def hexdump(self, fd=sys.stdout):
-        offset = 0
-
-        d = __init__.HexDumper(fd)
+        d = HexDumper(fd)
         for i in self.contents:
             try:
                 for j in xrange(i):
@@ -139,7 +138,7 @@ class GapString:
 
     def __getitem__(self, idx):
         if False:
-            c = self[idx:idx+1]
+            c = self[idx:idx + 1]
             if c.hasgaps():
                 return self.drop[0]
             else:
@@ -213,7 +212,7 @@ class GapString:
             except ValueError:
                 break
             ret.append(cur[:pos])
-            cur = cur[pos+len(pivot):]
+            cur = cur[pos + len(pivot):]
         ret.append(cur)
         return ret
 
@@ -243,4 +242,3 @@ if __name__ == '__main__':
     assert len(gs[:4]) == 4
     assert len(gs[6:]) == 4
     assert str(gs[:0]) == ''
-

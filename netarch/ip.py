@@ -3,41 +3,49 @@
 ## IP resequencing + protocol reversing skeleton
 ## 2008 Massive Blowout
 
-import StringIO
-import struct
-import socket
-import warnings
-import heapq
-import gapstr
-import time
-try:
-    import pcap
-except ImportError:
-    import py_pcap as pcap
-import os
 import cgi
+import heapq
+import os
+import rfc822
+import socket
+import struct
+import StringIO
+import time
 import urllib
 import UserDict
-from __init__ import *
+import warnings
+
+try:
+    import pcap
+    if "open" not in dir(pcap):
+        raise ImportError()
+except ImportError:
+    import py_pcap as pcap
+
+from . import unpack, hexdump
+import gapstr
+
 
 def unpack_nybbles(byte):
     return (byte >> 4, byte & 0x0F)
 
 
+# constants
 transfers = os.environ.get('TRANSFERS', 'transfers')
 
 IP = 0x0800
 ARP = 0x0806
 VLAN = 0x8100
-
 ICMP = 1
-TCP  = 6
-UDP  = 17
+TCP = 6
+UDP = 17
+
 
 def str_of_eth(d):
     return ':'.join([('%02x' % ord(x)) for x in d])
 
-class Frame:
+
+class Frame(object):
     """Turn an ethernet frame into relevant parts"""
 
     def __init__(self, pkt):
@@ -71,7 +79,7 @@ class Frame:
             (self.ihlvers,
              self.tos,
              self.tot_len,
-             self.id,
+             self.ipid,
              self.frag_off,
              self.ttl,
              self.protocol,
@@ -110,7 +118,7 @@ class Frame:
                 (self.type,
                  self.code,
                  self.cheksum,
-                 self.id,
+                 self.ipid,
                  self.seq,
                  p) = unpack('!BBHHH', p)
                 self.payload = p[:self.tot_len - 8]
@@ -124,12 +132,12 @@ class Frame:
             self.dst = (self.daddr, self.dport)
 
             # This hash is the same for both sides of the transaction
+            self.iphash = self.saddr ^ self.daddr
             self.hash = (self.saddr ^ (self.sport or 0)
                          ^ self.daddr ^ (self.dport or 0))
         else:
             self.name = 'Ethernet type %d' % self.eth_type
             self.protocol = None
-
 
     def get_src_addr(self):
         saddr = struct.pack('!i', self.saddr)
@@ -152,16 +160,15 @@ class Frame:
 
     def __arp_repr__(self):
         return '<Frame %s %s(%s) -> %s(%s)>' % (self.name,
-                                                str_of_eth(self.ar_sha),
-                                                self.src_addr,
-                                                str_of_eth(self.ar_tha),
-                                                self.dst_addr)
+                                        str_of_eth(self.ar_sha), self.src_addr,
+                                        str_of_eth(self.ar_tha), self.dst_addr)
 
-class TCP_Recreate:
+
+class TCP_Recreate(object):
     closed = True
 
-    def __init__(self, pcap, src, dst, timestamp):
-        self.pcap = pcap
+    def __init__(self, pcapobj, src, dst, timestamp):
+        self.pcap = pcapobj
         self.src = (socket.inet_aton(src[0]), src[1])
         self.dst = (socket.inet_aton(dst[0]), dst[1])
         self.sid = self.did = 0
@@ -172,27 +179,27 @@ class TCP_Recreate:
 
     def write_header(self):
         p = '\0\0\0\0\0\0\0\0\0\0\0\0\xfe\xed'
-        self.pcap.write(((0,0,len(p)), p))
+        self.pcap.write(((0, 0, len(p)), p))
 
     def packet(self, cli, payload, flags=0):
         if cli:
             sip, sport = self.src
             dip, dport = self.dst
-            id = self.sid
+            ipid = self.sid
             self.sid += 1
             seq = self.sseq
             self.sseq += len(payload)
-            if flags & (SYN|FIN):
+            if flags & (SYN | FIN):
                 self.sseq += 1
             ack = self.dseq
         else:
             sip, sport = self.dst
             dip, dport = self.src
-            id = self.did
+            ipid = self.did
             self.did += 1
             seq = self.dseq
             self.dseq += len(payload)
-            if flags & (SYN|FIN):
+            if flags & (SYN | FIN):
                 self.dseq += 1
             ack = self.sseq
         if not (flags & ACK):
@@ -203,33 +210,31 @@ class TCP_Recreate:
                              IP)
 
         iphdr = struct.pack('!BBHHHBBH4s4s',
-                            0x45, # Version, Header length/32
-                            0,    # Differentiated services / ECN
-                            40+len(payload), # total size
-                            id,
-                            0x4000, # Don't fragment, no fragment offset
-                            6,      # TTL
-                            TCP,    # Protocol
-                            0,      # Header checksum
+                            0x45,    # Version, Header length/32
+                            0,       # Differentiated services / ECN
+                            40 + len(payload),  # total size
+                            ipid,
+                            0x4000,  # Don't fragment, no fragment offset
+                            6,       # TTL
+                            TCP,     # Protocol
+                            0,       # Header checksum
                             sip,
                             dip)
         shorts = struct.unpack('!hhhhhhhhhh', iphdr)
         shsum = sum(shorts)
-        ipsum = struct.pack('!h', (~shsum & 0xffff) - 2) # -2? WTF?
+        ipsum = struct.pack('!h', (~shsum & 0xffff) - 2)  # -2? WTF?
         iphdr = iphdr[:10] + ipsum + iphdr[12:]
 
         tcphdr = struct.pack('!HHLLBBHHH',
                              sport,
                              dport,
-                             seq,    # Sequence number
-                             ack,    # Acknowledgement number
-                             0x50,   # Data offset
-                             flags,  # Flags
-                             0xff00, # Window size
-                             0,      # Checksum
-                             0)      # Urgent pointer
-
-
+                             seq,     # Sequence number
+                             ack,     # Acknowledgement number
+                             0x50,    # Data offset
+                             flags,   # Flags
+                             0xff00,  # Window size
+                             0,       # Checksum
+                             0)       # Urgent pointer
 
         return ethhdr + iphdr + tcphdr + str(payload)
 
@@ -245,14 +250,14 @@ class TCP_Recreate:
             self.write_pkt(timestamp, cli, d, ACK)
 
     def handshake(self, timestamp):
-        self.write_pkt(timestamp, True, '', SYN)
-        self.write_pkt(timestamp, False, '', SYN|ACK)
+        self.write_pkt(timestamp, True, '',  SYN)
+        self.write_pkt(timestamp, False, '', SYN | ACK)
         #self.write_pkt(timestamp, True, '', ACK)
 
     def close(self):
-        self.write_pkt(self.lastts, True, '', FIN|ACK)
-        self.write_pkt(self.lastts, False, '', FIN|ACK)
-        self.write_pkt(self.lastts, True, '', ACK)
+        self.write_pkt(self.lastts, True, '',  FIN | ACK)
+        self.write_pkt(self.lastts, False, '', FIN | ACK)
+        self.write_pkt(self.lastts, True, '',  ACK)
 
     def __del__(self):
         if not self.closed:
@@ -264,7 +269,8 @@ RST = 4
 PSH = 8
 ACK = 16
 
-class TCP_Resequence:
+
+class TCP_Resequence(object):
     """TCP session resequencer.
 
     >>> p = pcap.open('whatever.pcap')
@@ -297,7 +303,6 @@ class TCP_Resequence:
         self.hash = 0
 
         self.handle = self.handle_handshake
-
 
     def bundle_pending(self, xdi, pkt, seq):
         """Bundle up any pending packets.
@@ -357,7 +362,6 @@ class TCP_Resequence:
 
         return ret
 
-
     def handle(self, pkt):
         """Stub.
 
@@ -366,7 +370,6 @@ class TCP_Resequence:
         """
 
         raise NotImplementedError()
-
 
     def handle_handshake(self, pkt):
         if not self.first:
@@ -395,7 +398,6 @@ class TCP_Resequence:
             self.handle = self.handle_packet
             self.handle(pkt)
 
-
     def handle_packet(self, pkt):
         # Which way is this going?  0 == from client
         idx = int(pkt.src == self.srv)
@@ -417,7 +419,6 @@ class TCP_Resequence:
             if pkt.ack > seq:
                 return self.bundle_pending(xdi, pkt, seq)
 
-
     def handle_drop(self, pkt):
         """Warn about any unhandled packets"""
 
@@ -431,7 +432,7 @@ class TCP_Resequence:
             hexdump(pkt.payload)
 
 
-class Dispatch:
+class Dispatch(object):
     def __init__(self, *filenames):
         self.pcs = {}
 
@@ -490,6 +491,7 @@ class Dispatch:
 class NeedMoreData(Exception):
     pass
 
+
 class Packet(UserDict.DictMixin):
     """Base class for a packet from a binary protocol.
 
@@ -520,7 +522,6 @@ class Packet(UserDict.DictMixin):
         r += '>'
         return r
 
-
     ## Dict methods
     def __setitem__(self, k, v):
         self.params[k] = v
@@ -535,7 +536,7 @@ class Packet(UserDict.DictMixin):
         return self.params.__iter__()
 
     def has_key(self, k):
-        return self.params.has_key(k)
+        return k in self.params
 
     def keys(self):
         return self.params.keys()
@@ -600,7 +601,7 @@ class Packet(UserDict.DictMixin):
         """Handle data from a Session class."""
 
         data = self.parse(data)
-        if self.opcode <> None:
+        if self.opcode != None:
             try:
                 f = getattr(self, 'opcode_%s' % self.opcode)
             except AttributeError:
@@ -713,7 +714,7 @@ class Session:
     def handle_packets(self, collection):
         """Handle a collection of packets"""
 
-        for chunk in resequence(collection):
+        for chunk in TCP_Resequence(collection):
             self.handle(chunk)
         self.done()
 
@@ -739,18 +740,16 @@ class HtmlSession(Session):
 ''' % self.__class__.__name__)
         self.sessfd.write('<h1>%s</h1>\n' % self.__class__.__name__)
         self.sessfd.write('<pre>')
-        self.srv = None
 
     def __del__(self):
         self.sessfd.write('</pre></body></html>')
+        self.sessfd.close()
 
     def log(self, frame, payload, escape=True):
         if escape:
-            p = cgi.escape(str(payload))
+            p = cgi.escape(unicode(payload))
         else:
             p = payload
-        if not self.srv:
-            self.srv = frame.saddr
         if frame.saddr == self.srv:
             cls = 'server'
         else:
@@ -763,4 +762,3 @@ class HtmlSession(Session):
             self.sessfd.write('<span class="time %s">%s</span><span class="%s">' % (cls, ts, cls))
         self.sessfd.write(p.replace('\r\n', '\n'))
         self.sessfd.write('</span>')
-            

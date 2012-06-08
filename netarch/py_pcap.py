@@ -4,7 +4,8 @@ import struct
 
 _MAGIC = 0xA1B2C3D4
 
-class pcap:
+
+class pcap(object):
     def __init__(self, stream, mode='rb', snaplen=65535, linktype=1):
         try:
             self.stream = file(stream, mode)
@@ -77,11 +78,11 @@ open_offline = pcap
 
 
 if __name__ == '__main__':
-    p = open('test.pcap', 'w')  # Create a new file
-    p.write(((0, 0, 3), 'foo')) # Add a packet
+    p = open('test.pcap', 'w')   # Create a new file
+    p.write(((0, 0, 3), 'foo'))  # Add a packet
     p.write(((0, 0, 3), 'bar'))
     del p
-    p = open(file('test.pcap')) # Also takes file objects
+    p = open(file('test.pcap'))  # Also takes file objects
     assert ((p.version, p.thiszone, p.sigfigs, p.snaplen, p.linktype) ==
             ((2, 4), 0, 0, 65535, 1))
     assert ([i for i in p] == [((0, 0, 3), 'foo'), ((0, 0, 3), 'bar')])
