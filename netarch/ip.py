@@ -617,15 +617,47 @@ class Packet(UserDict.DictMixin):
         raise AttributeError('Opcode %s unknown' % self.opcode)
 
 
-class Session:
+class HttpPacket(Packet):
+    def parse(self, data):
+        # We need the entire block
+        if not '\r\n\r\n' in data:
+            raise NeedMoreData()
+
+        if data[:4].hasgaps():
+            self.payload = data
+            self.opcode = 'drop'
+            return
+
+        four = str(data[:4])
+        if four in ('POST', 'HTTP', 'GET '):
+            # XXX: make a gapstr.file class
+            f = StringIO.BytesIO(str(data))
+            self['request'] = f.readline()
+            self.m = rfc822.Message(f)
+            l = int(self.m.getheader('content-length', '0'))
+            pos = f.tell()
+
+            content = data[pos:]
+            if len(content) < l:
+                raise NeedMoreData()
+
+            self.handle_content(content[:l])
+            return content[l:]
+        else:
+            self.handle_weirdo(data)
+
+    def handle_content(self, content):
+        self.payload = content
+
+
+class Session(object):
     """Base class for a binary protocol session."""
 
-    # Override this, duh
-    Packet = Packet
-
-    def __init__(self, frame):
+    def __init__(self, frame, packetClass=Packet):
+        self.Packet = packetClass
         self.firstframe = frame
         self.lastframe = [None, None]
+        self.srv = frame.daddr
         self.basename = os.path.join(transfers, frame.src_addr)
         self.basename2 = os.path.join(transfers, frame.dst_addr)
         self.pending = {}
@@ -720,8 +752,8 @@ class Session:
 
 
 class HtmlSession(Session):
-    def __init__(self, frame):
-        Session.__init__(self, frame)
+    def __init__(self, frame, packetClass=Packet):
+        Session.__init__(self, frame, packetClass)
         self.sessfd = self.open_out('session.html')
         self.sessfd.write('''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html
