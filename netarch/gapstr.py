@@ -192,6 +192,15 @@ class GapString(object):
                 new.append(i)
         return new
 
+    def __contains__(self, needle):
+        for i in self.contents:
+            try:
+                if needle in i:
+                    return True
+            except TypeError:
+                pass
+        return False
+
     def index(self, needle):
         pos = 0
         for i in self.contents:
@@ -222,6 +231,43 @@ class GapString(object):
     def endswith(self, what):
         return (what == str(self[-len(what):]))
 
+    def is_printable(self):
+        """
+        Tests to confirm that all the characters
+        in the string are printable
+        """
+        for element in self.contents:
+            if type(element) == int:
+                continue
+            for character in element:
+                if character not in string.printable:
+                    return False
+
+        return True
+
+    def mostly_printable(self, ratio=.90):
+        """
+        Tests calculate the percentate of printable characters
+        if there are more printable characters than the ratio
+        given return true.
+        """
+
+        numb_chars = 0
+        numb_printable = 0
+        for element in self.contents:
+            if type(element) == int:
+                continue
+
+            for character in element:
+                numb_chars += 1
+                if character in string.printable:
+                    numb_printable += 1
+
+        threshold = int(numb_chars * ratio)
+        if numb_printable > threshold:
+            return True
+
+        return False
 
 if __name__ == '__main__':
     gs = GapString()
