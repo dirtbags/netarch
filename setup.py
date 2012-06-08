@@ -18,4 +18,7 @@ setup(
         "Topic :: System :: Networking"
     ],
     packages=['netarch'],
+    data_files=[
+        ('share/netarch/examples', ['extra/start-here.py']),
+    ]
 )
