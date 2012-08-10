@@ -19,6 +19,8 @@ setup(
     ],
     packages=['netarch'],
     data_files=[
-        ('share/netarch/examples', ['extra/start-here.py']),
+        ('share/doc/netarch', ['COPYING', 'CREDITS', 'README']),
+        ('share/doc/netarch/examples', ['extra/start-here.py']),
+        ('share/man/man3', ['doc/netarch.3']),
     ]
 )
