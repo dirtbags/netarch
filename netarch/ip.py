@@ -159,9 +159,10 @@ class Frame(object):
                  len(self.payload)))
 
     def __arp_repr__(self):
-        return '<Frame %s %s(%s) -> %s(%s)>' % (self.name,
-                                        str_of_eth(self.ar_sha), self.src_addr,
-                                        str_of_eth(self.ar_tha), self.dst_addr)
+        return '<Frame %s %s(%s) -> %s(%s)>' % (
+            self.name,
+            str_of_eth(self.ar_sha), self.src_addr,
+            str_of_eth(self.ar_tha), self.dst_addr)
 
 
 class TCP_Recreate(object):
@@ -601,7 +602,7 @@ class Packet(UserDict.DictMixin):
         """Handle data from a Session class."""
 
         data = self.parse(data)
-        if self.opcode != None:
+        if self.opcode is not None:
             try:
                 f = getattr(self, 'opcode_%s' % self.opcode)
             except AttributeError:

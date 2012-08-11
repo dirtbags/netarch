@@ -138,7 +138,7 @@ def freqgraph(f):
             return 0
     items = []
     for c, n in f.iteritems():
-        if type(n) != type(0):
+        if not isinstance(n, int):
             n = len(n)
         items.append((c, n))
     items.sort(cmp2)
@@ -171,8 +171,7 @@ def rot(n, txt):
     for c in txt:
         if c.isalpha():
             o = ord(c) + n
-            if ((c.islower() and o > ord('z')) or
-                (c.isupper() and o > ord('Z'))):
+            if ((c.islower() and o > ord('z')) or (c.isupper() and o > ord('Z'))):
                 o -= 26
             out += chr(o)
         else:
@@ -223,7 +222,7 @@ def adds(txt):
 class XorMask(object):
     def __init__(self, mask, stick=False):
         self.offset = 0
-        if type(mask) == type(''):
+        if isinstance(mask, str):
             self._mask = tuple(ord(m) for m in mask)
         else:
             self._mask = tuple(mask)

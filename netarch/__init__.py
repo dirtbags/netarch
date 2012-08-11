@@ -75,6 +75,7 @@ dbch  = (u'·☺☻♥♦♣♠•◘○◙♂♀♪♫☼'
          u'αßΓπΣσµτΦΘΩδ∞φε∩'
          u'⁰¹²³⁴⁵⁶⁷⁸⁹ⁱⁿ⁽⁼⁾¤')
 
+
 def unpack(fmt, buf):
     """Unpack buf based on fmt, return the rest as a string."""
 
