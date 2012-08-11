@@ -139,17 +139,25 @@ class Frame(object):
             self.name = 'Ethernet type %d' % self.eth_type
             self.protocol = None
 
-    def get_src_addr(self):
+    @property
+    def src_addr(self):
         saddr = struct.pack('!i', self.saddr)
-        self.src_addr = socket.inet_ntoa(saddr)
-        return self.src_addr
-    src_addr = property(get_src_addr)
+        self._src_addr = socket.inet_ntoa(saddr)
+        return self._src_addr
 
-    def get_dst_addr(self):
+    @src_addr.deleter
+    def src_addr(self):
+        del self._src_addr
+
+    @property
+    def dst_addr(self):
         daddr = struct.pack('!i', self.daddr)
-        self.dst_addr = socket.inet_ntoa(daddr)
-        return self.dst_addr
-    dst_addr = property(get_dst_addr)
+        self._dst_addr = socket.inet_ntoa(daddr)
+        return self._dst_addr
+
+    @dst_addr.deleter
+    def dst_addr(self):
+        del self._dst_addr
 
     def __repr__(self):
         return ('<Frame %s %s:%r(%08x) -> %s:%r(%08x) length %d>' %
