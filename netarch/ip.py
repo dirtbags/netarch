@@ -535,6 +535,9 @@ class Packet(UserDict.DictMixin):
     def __setitem__(self, k, v):
         self.params[k] = v
 
+    def __delitem__(self, k):
+        del self.params[k]
+
     def __getitem__(self, k):
         return self.params[k]
 
