@@ -3,16 +3,17 @@
 ## IP resequencing + protocol reversing skeleton
 ## 2008 Massive Blowout
 
+import StringIO
+import UserDict
 import cgi
 import heapq
 import os
 import rfc822
 import socket
 import struct
-import StringIO
+import sys
 import time
 import urllib
-import UserDict
 import warnings
 
 try:
@@ -519,6 +520,8 @@ class Packet(UserDict.DictMixin):
         self.params = {}
         self.payload = None
         self.subpackets = []
+        self.html = None
+        self.text = None
 
     def __repr__(self):
         r = '<%s packet opcode=%s' % (self.__class__.__name__, self.opcode)
@@ -627,6 +630,12 @@ class Packet(UserDict.DictMixin):
         """Unknown opcode"""
 
         raise AttributeError('Opcode %s unknown' % self.opcode)
+
+    def opcode_drop(self):
+        """Drop"""
+        if self.payload is not None:
+            self['droplen'] = len(self.payload)
+            self.payload = self.payload[:1024]
 
 
 class HttpPacket(Packet):
@@ -764,8 +773,9 @@ class Session(object):
 
 
 class HtmlSession(Session):
-    def __init__(self, frame, packetClass=Packet):
+    def __init__(self, frame, packetClass=Packet, debug=True):
         Session.__init__(self, frame, packetClass)
+        self.debug = debug
         self.sessfd = self.open_out('session.html')
         self.sessfd.write('''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html
@@ -777,7 +787,7 @@ class HtmlSession(Session):
   <style type="text/css">
     .time { float: right; margin-left: 1em; font-size: 75%%; }
     .server { background-color: white; color: black; }
-    .client { background-color: #884; color: white; }
+    .client { background-color: #a8a8a8; color: black; }
   </style>
 </head>
 <body>
@@ -806,3 +816,13 @@ class HtmlSession(Session):
             self.sessfd.write('<span class="time %s">%s</span><span class="%s">' % (cls, ts, cls))
         self.sessfd.write(p.replace('\r\n', '\n'))
         self.sessfd.write('</span>')
+
+    def process(self, packet):
+        if self.debug:
+            packet.show()
+        if hasattr(packet, "html") and packet.html is not None:
+            self.log(packet.firstframe, packet.html, False)
+        if hasattr(packet, "text") and packet.text is not None:
+            if self.debug:
+                sys.stdout.write(packet.text)
+            self.log(packet.firstframe, packet.text, True)

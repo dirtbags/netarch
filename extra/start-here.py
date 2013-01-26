@@ -24,16 +24,19 @@ class StinkyPinkyPacket(ip.Packet):
         is deemed to not be part of the packet's data, it should be returned.
         Likewise, if the Packet needs more data, raise ip.NeedsMoreData
 
-        self.parts - a magic bag of values. self.parts[:-1] is highlighted when
-          printed iff the value == length(self.payload)
-
+        self.parts   - a magic bag of values; (!) when the value matches len(self.payload)
         self.payload - non-header packet data
+        self.opcode  - an integer that triggers additional parsing
+        self.text    - text to be displayed without prep (i.e. shell output)
+        self.html    - html information for logging
 
-        self.opcode - an integer that triggers additional parsing, or special
-          display
+        return:
+
+            If you need more data, raise ip.NeedMoreData()
+            If you have excess data, return it from this function
 
         '''
-        self.parts = unpack("<BBBB", data)
+        self.parts = unpack("<BBBB", data)  # example 4-byte header
         self.payload = self.parts[-1]
 
         return None
@@ -59,8 +62,8 @@ class StinkyPinkyPacket(ip.Packet):
 class StinkyPinkySession(ip.HtmlSession):
     ''' A StinkyPinky Session '''
 
-    def __init__(self, frame, packetClass=StinkyPinkyPacket):
-        ip.HtmlSession.__init__(self, frame, packetClass)
+    def __init__(self, frame, packetClass=StinkyPinkyPacket, debug=True):
+        ip.HtmlSession.__init__(self, frame, packetClass, debug)
 
     def process(self, packet):
         '''Process packet data
@@ -68,8 +71,18 @@ class StinkyPinkySession(ip.HtmlSession):
         This method might be a good spot for special data handling at a session
         level. One example would be carving embedded data to a separate file.
 
+        This default action, copied from ip.HtmlSession, writes any packet.html
+        and packet.text (URL escaped) to the session log
+
         '''
-        packet.show()
+        if self.debug:
+            packet.show()
+        if hasattr(packet, "html") and packet.html is not None:
+            self.log(packet.firstframe, packet.html, False)
+        if hasattr(packet, "text") and packet.text is not None:
+            if self.debug:
+                sys.stdout.write(self.text)
+            self.log(packet.firstframe, packet.text, True)
 
 
 # execution harness
