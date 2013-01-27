@@ -775,7 +775,14 @@ class Session(object):
 class HtmlSession(Session):
     def __init__(self, frame, packetClass=Packet, debug=True):
         Session.__init__(self, frame, packetClass)
+        self.sessfd = None
         self.debug = debug
+        self.startlog()
+
+    def startlog(self, client="#a8a8a8", server="white"):
+        if self.sessfd is not None:
+            self.sessfd.close()
+
         self.sessfd = self.open_out('session.html')
         self.sessfd.write('''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html
@@ -786,12 +793,12 @@ class HtmlSession(Session):
   <title>%s</title>
   <style type="text/css">
     .time { float: right; margin-left: 1em; font-size: 75%%; }
-    .server { background-color: white; color: black; }
-    .client { background-color: #a8a8a8; color: black; }
+    .server { background-color: %s; color: black; }
+    .client { background-color: %s; color: black; }
   </style>
 </head>
 <body>
-''' % self.__class__.__name__)
+''' % (self.__class__.__name__, server, client))
         self.sessfd.write('<h1>%s</h1>\n' % self.__class__.__name__)
         self.sessfd.write('<pre>')
 
