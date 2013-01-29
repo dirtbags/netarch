@@ -232,7 +232,7 @@ class TCP_Recreate(object):
                             dip)
         shorts = struct.unpack('!hhhhhhhhhh', iphdr)
         shsum = sum(shorts)
-        ipsum = struct.pack('!h', (~shsum & 0xffff) - 2)  # -2? WTF?
+        ipsum = struct.pack('!H', (~shsum & 0xffff))
         iphdr = iphdr[:10] + ipsum + iphdr[12:]
 
         tcphdr = struct.pack('!HHLLBBHHH',
