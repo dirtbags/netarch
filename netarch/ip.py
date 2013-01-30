@@ -808,7 +808,7 @@ class HtmlSession(Session):
 
     def log(self, frame, payload, escape=True):
         if escape:
-            p = cgi.escape(unicode(payload))
+            p = cgi.escape(payload).encode('ascii', 'xmlcharrefreplace')
         else:
             p = payload
         if frame.saddr == self.srv:
