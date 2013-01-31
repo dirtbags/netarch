@@ -230,9 +230,11 @@ class TCP_Recreate(object):
                             0,       # Header checksum
                             sip,
                             dip)
-        shorts = struct.unpack('!hhhhhhhhhh', iphdr)
+        shorts = struct.unpack('!HHHHHHHHHH', iphdr)
         shsum = sum(shorts)
-        ipsum = struct.pack('!H', (~shsum & 0xffff))
+        shsum += shsum >> 16          # the carry
+        shsum = ~shsum                # one's compliment
+        ipsum = struct.pack('!H', shsum & 0xffff)
         iphdr = iphdr[:10] + ipsum + iphdr[12:]
 
         tcphdr = struct.pack('!HHLLBBHHH',
