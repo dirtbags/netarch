@@ -195,7 +195,7 @@ class TCP_Recreate(object):
         if cli:
             sip, sport = self.src
             dip, dport = self.dst
-            ipid = self.sid
+            ipid = (self.sid & 0xffff)
             self.sid += 1
             seq = self.sseq
             self.sseq += len(payload)
@@ -205,7 +205,7 @@ class TCP_Recreate(object):
         else:
             sip, sport = self.dst
             dip, dport = self.src
-            ipid = self.did
+            ipid = (self.did & 0xffff)
             self.did += 1
             seq = self.dseq
             self.dseq += len(payload)
@@ -749,7 +749,7 @@ class Session(object):
 
         return
 
-    def open_out(self, fn):
+    def open_out(self, fn, text=True):
         frame = self.firstframe
         fn = '%d-%s~%d-%s~%d---%s' % (frame.time,
                                       frame.src_addr, frame.sport,
@@ -758,7 +758,7 @@ class Session(object):
         fullfn = os.path.join(self.basename, fn)
         fullfn2 = os.path.join(self.basename2, fn)
         print '  writing %s' % (fn,)
-        fd = file(fullfn, 'w')
+        fd = file(fullfn, 'w' if text else 'wb')
         try:
             os.unlink(fullfn2)
         except OSError:
