@@ -144,7 +144,7 @@ def freqgraph(f):
     items.sort(cmp2)
 
     for c, n in items:
-        print '%s: %s' % (c, '#' * n)
+        print '%s: %s' % (repr(c), '#' * n)
 
 
 def neighbors(txt):
