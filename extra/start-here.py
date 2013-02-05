@@ -88,10 +88,14 @@ class StinkyPinkySession(ip.HtmlSession):
 # execution harness
 if __name__ == '__main__':
     if len(sys.argv) > 1:
-        s = None
-        reseq = ip.Dispatch(*sys.argv[1:])
-        for h, d in reseq:
-            srv, first, chunk = d
-            if not s:
-                s = StinkyPinkySession(first)
-            s.handle(srv, first, chunk, reseq.last)
+        sessions = {}
+        dp = ip.Dispatch(*sys.argv[1:])
+        for fhash, chunk in dp:
+            is_srv, frame, gs = chunk
+            if not frame:
+                continue
+            if fhash not in sessions:
+                sessions[fhash] = StinkyPinkySession(frame)
+            sessions[fhash].handle(is_srv, frame, gs, dp.last)
+        for sess in sessions.itervalues():
+            sess.done()
