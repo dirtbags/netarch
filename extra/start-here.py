@@ -85,8 +85,8 @@ class StinkyPinkySession(ip.HtmlSession):
             self.log(packet.firstframe, packet.text, True)
 
 
-# execution harness
 if __name__ == '__main__':
+    ''' an execution harness '''
     if len(sys.argv) > 1:
         sessions = {}
         dp = ip.Dispatch(*sys.argv[1:])
@@ -99,3 +99,6 @@ if __name__ == '__main__':
             sessions[fhash].handle(is_srv, frame, gs, dp.last)
         for sess in sessions.itervalues():
             sess.done()
+else:
+    ''' an import harness '''
+    session = StinkyPinkySession
