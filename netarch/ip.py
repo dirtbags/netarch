@@ -691,6 +691,11 @@ class Session(object):
 
         self.setup()
 
+    @classmethod
+    def session(*args, **kwargs):
+        cls, args = args[0], args[1:]
+        return cls(*args, **kwargs)
+
     def setup(self):
         """Set things up."""
 
@@ -770,6 +775,18 @@ class Session(object):
         for chunk in TCP_Resequence(collection):
             self.handle(chunk)
         self.done()
+
+
+class DumbSession(Session):
+    ''' Just a dumb Session '''
+    pass
+
+
+class DropSession(Session):
+    ''' a Session that drops all data passed to it '''
+
+    def process(self, packet):
+        pass
 
 
 class HtmlSession(Session):
