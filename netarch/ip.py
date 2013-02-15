@@ -457,6 +457,19 @@ class TCP_Resequence(object):
             hexdump(pkt.payload)
 
 
+class ICMP_Resequence(object):
+    """ICMP session resequencer"""
+
+    def __init__(self):
+        self.cli = None
+
+    def handle(self, frame):
+        if not self.cli:
+            self.cli = frame.saddr
+        idx = 1 - (self.cli == frame.saddr)
+        return (idx, frame, gapstr.GapString(frame.payload))
+
+
 class Dispatch(object):
     def __init__(self, *filenames):
         self.pcs = {}
@@ -490,22 +503,27 @@ class Dispatch(object):
         if f:
             heapq.heappush(self.tops, (f, pc, filename, fd, pos))
 
+    def _get_sequencer(self, proto):
+        if proto == TCP:
+            return TCP_Resequence()
+        elif proto == ICMP:
+            return ICMP_Resequence()
+        else:
+            raise NotImplementedError()
+
     def __iter__(self):
         while self.tops:
             f, pc, filename, fd, pos = heapq.heappop(self.tops)
             if not self.last:
                 self.last = (filename, pos)
-            frame = Frame(f)
-            if frame.protocol == TCP:
-                # compute TCP session hash
-                tcp_sess = self.sessions.get(frame.hash)
-                if not tcp_sess:
-                    tcp_sess = TCP_Resequence()
-                    self.sessions[frame.hash] = tcp_sess
-                ret = tcp_sess.handle(frame)
-                if ret:
-                    yield frame.hash, ret
-                    self.last = None
+            frame = Frame(f, pc.linktype)
+            if frame.hash not in self.sessions:
+                self.sessions[frame.hash] = self._get_sequencer(frame.protocol)
+            ret = self.sessions[frame.hash].handle(frame)
+            if ret:
+                yield frame.hash, ret
+                self.last = None
+
             self._read(pc, filename, fd)
 
 
@@ -585,9 +603,9 @@ class Packet(UserDict.DictMixin):
                               self.opcode_desc)
         if self.firstframe:
             print '    %s:%d -> %s:%d (%s.%06dZ)' % (self.firstframe.src_addr,
-                                                     self.firstframe.sport,
+                                                     self.firstframe.sport or 0,
                                                      self.firstframe.dst_addr,
-                                                     self.firstframe.dport,
+                                                     self.firstframe.dport or 0,
                                                      time.strftime('%Y-%m-%dT%T', time.gmtime(self.firstframe.time)),
                                                      self.firstframe.time_usec)
 
@@ -770,8 +788,8 @@ class Session(object):
     def open_out(self, fn, text=True):
         frame = self.firstframe
         fn = '%d-%s~%d-%s~%d---%s' % (frame.time,
-                                      frame.src_addr, frame.sport,
-                                      frame.dst_addr, frame.dport,
+                                      frame.src_addr, frame.sport or 0,
+                                      frame.dst_addr, frame.dport or 0,
                                       urllib.quote(fn, ''))
         fullfn = os.path.join(self.basename, fn)
         fullfn2 = os.path.join(self.basename2, fn)
