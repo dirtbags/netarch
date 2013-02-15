@@ -466,7 +466,7 @@ class ICMP_Resequence(object):
     def handle(self, frame):
         if not self.cli:
             self.cli = frame.saddr
-        idx = 1 - (self.cli == frame.saddr)
+        idx = 1 - int(self.cli == frame.saddr)
         return (idx, frame, gapstr.GapString(frame.payload))
 
 
