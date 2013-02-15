@@ -41,6 +41,9 @@ ICMP = 1
 TCP = 6
 UDP = 17
 
+LINKTYPE_ETHER = 1
+LINKTYPE_RAW = 101
+
 
 def str_of_eth(d):
     return ':'.join([('%02x' % ord(x)) for x in d])
@@ -49,18 +52,22 @@ def str_of_eth(d):
 class Frame(object):
     """Turn an ethernet frame into relevant parts"""
 
-    def __init__(self, pkt):
+    def __init__(self, pkt, linktype=LINKTYPE_ETHER):
         ((self.time, self.time_usec, _), frame) = pkt
 
-        # Ethernet
-        (self.eth_dhost,
-         self.eth_shost,
-         self.eth_type,
-         p) = unpack('!6s6sH', frame)
+        if linktype == LINKTYPE_ETHER:
+            (self.eth_shost,
+             self.eth_dhost,
+             self.eth_type,
+             p) = unpack('!6s6sH', frame)
+        else:                      # Assume LINKTYPE_RAW, which contains only IP
+            self.eth_shost = None
+            self.eth_dhost = None
+            self.eth_type = IP
+            p = frame
         if self.eth_type == VLAN:
             _, self.eth_type, p = unpack('!HH', p)
-        if self.eth_type == ARP:
-            # ARP
+        if self.eth_type == ARP:   # ARP
             self.name, self.protocol = ('ARP', ARP)
             (self.ar_hrd,
              self.ar_pro,
@@ -75,8 +82,7 @@ class Frame(object):
             self.saddr = self.ar_sip
             self.daddr = self.ar_tip
             self.__repr__ = self.__arp_repr__
-        elif self.eth_type == IP:
-            # IP
+        elif self.eth_type == IP:  # IP
             (self.ihlvers,
              self.tos,
              self.tot_len,
@@ -87,7 +93,7 @@ class Frame(object):
              self.check,
              self.saddr,
              self.daddr,
-             p) = unpack("!BBHHHBBHii", p)
+             p) = unpack("!BBHHHBBHII", p)
 
             if self.protocol == TCP:
                 self.name = 'TCP/IP'
@@ -105,6 +111,7 @@ class Frame(object):
                 opt_length = self.off * 4
                 self.options, p = p[:opt_length - 20], p[opt_length - 20:]
                 self.payload = p[:self.tot_len - opt_length - 20]
+                self.__repr__ = self.__tcp_repr__
             elif self.protocol == UDP:
                 self.name = 'UDP/IP'
                 (self.sport,
@@ -119,10 +126,11 @@ class Frame(object):
                 (self.type,
                  self.code,
                  self.cheksum,
-                 self.ipid,
+                 self.ident,
                  self.seq,
                  p) = unpack('!BBHHH', p)
                 self.payload = p[:self.tot_len - 8]
+                self.__repr__ = self.__icmp_repr__
             else:
                 self.name = 'IP Protocol %d' % self.protocol
                 self.sport = self.dport = None
@@ -160,7 +168,14 @@ class Frame(object):
     def dst_addr(self):
         del self._dst_addr
 
-    def __repr__(self):
+    def __icmp_repr__(self):
+        return ('<Frame %s %s -> %s (%d/%d: %d, %d) length %d>' %
+                (self.name,
+                 self.src_addr, self.dst_addr,
+                 self.type, self.code, self.ident, self.seq,
+                 len(self.payload)))
+
+    def __tcp_repr__(self):
         return ('<Frame %s %s:%r(%08x) -> %s:%r(%08x) length %d>' %
                 (self.name,
                  self.src_addr, self.sport, self.seq,
