@@ -81,7 +81,7 @@ class StinkyPinkySession(ip.HtmlSession):
             self.log(packet.firstframe, packet.html, False)
         if hasattr(packet, "text") and packet.text is not None:
             if self.debug:
-                sys.stdout.write(self.text)
+                sys.stdout.write(packet.text)
             self.log(packet.firstframe, packet.text, True)
 
 
