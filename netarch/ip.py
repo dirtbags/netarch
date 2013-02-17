@@ -142,17 +142,27 @@ class Frame(object):
 
             # This hash is the same for both sides of the transaction
             self.iphash = self.saddr ^ self.daddr
-            self.hash = (self.saddr ^ (self.sport or 0)
-                         ^ self.daddr ^ (self.dport or 0))
+
+            self.hash = (self.saddr ^ (self.sport or 0) ^
+                         self.daddr ^ (self.dport or 0))
         else:
             self.name = 'Ethernet type %d' % self.eth_type
             self.protocol = None
+            self.saddr = self.eth_shost
+            self.daddr = self.eth_dhost
+            self.sport = self.dport = None
+            self.hash = self.eth_type
+            self.payload = p
 
     @property
     def src_addr(self):
-        saddr = struct.pack('!i', self.saddr)
-        self._src_addr = socket.inet_ntoa(saddr)
-        return self._src_addr
+        try:
+            saddr = struct.pack('!I', self.saddr)
+            self._src_addr = socket.inet_ntoa(saddr)
+            return self._src_addr
+        except struct.error:
+            self._src_addr = str_of_eth(self.saddr)
+            return self._src_addr
 
     @src_addr.deleter
     def src_addr(self):
@@ -160,9 +170,13 @@ class Frame(object):
 
     @property
     def dst_addr(self):
-        daddr = struct.pack('!i', self.daddr)
-        self._dst_addr = socket.inet_ntoa(daddr)
-        return self._dst_addr
+        try:
+            daddr = struct.pack('!I', self.daddr)
+            self._dst_addr = socket.inet_ntoa(daddr)
+            return self._dst_addr
+        except struct.error:
+            self._dst_addr = str_of_eth(self.daddr)
+            return self._dst_addr
 
     @dst_addr.deleter
     def dst_addr(self):
@@ -277,7 +291,7 @@ class TCP_Recreate(object):
     def handshake(self, timestamp):
         self.write_pkt(timestamp, True, '',  SYN)
         self.write_pkt(timestamp, False, '', SYN | ACK)
-        #self.write_pkt(timestamp, True, '', ACK)
+        self.write_pkt(timestamp, True, '', ACK)
 
     def close(self):
         self.write_pkt(self.lastts, True, '',  FIN | ACK)
@@ -457,7 +471,7 @@ class TCP_Resequence(object):
             hexdump(pkt.payload)
 
 
-class ICMP_Resequence(object):
+class Dumb_Resequence(object):
     """ICMP session resequencer"""
 
     def __init__(self):
@@ -486,14 +500,14 @@ class Dispatch(object):
         if not literal:
             parts = filename.split(':::')
             fn = parts[0]
-            fd = file(fn)
+            fd = open(fn, 'rb')
             pc = pcap.open(fd)
             if len(parts) > 1:
                 pos = int(parts[1])
                 fd.seek(pos)
             self._read(pc, fn, fd)
         else:
-            fd = file(filename)
+            fd = open(filename, 'rb')
             pc = pcap.open(fd)
             self._read(pc, filename, fd)
 
@@ -504,10 +518,12 @@ class Dispatch(object):
             heapq.heappush(self.tops, (f, pc, filename, fd, pos))
 
     def _get_sequencer(self, proto):
-        if proto == TCP:
+        if not proto:
+            return Dumb_Resequence()
+        elif proto == TCP:
             return TCP_Resequence()
         elif proto == ICMP:
-            return ICMP_Resequence()
+            return Dumb_Resequence()
         else:
             raise NotImplementedError()
 
@@ -799,7 +815,8 @@ class Session(object):
             os.unlink(fullfn2)
         except OSError:
             pass
-        os.link(fullfn, fullfn2)
+        if fullfn != fullfn2:
+            os.link(fullfn, fullfn2)
         return fd
 
     def handle_packets(self, collection):
@@ -830,7 +847,7 @@ class HtmlSession(Session):
         self.startlog()
 
     def startlog(self, client="#a8a8a8", server="white"):
-        if self.sessfd is not None:
+        if self.sessfd:
             self.sessfd.close()
 
         self.sessfd = self.open_out('session.html')
@@ -853,8 +870,9 @@ class HtmlSession(Session):
         self.sessfd.write('<pre>')
 
     def __del__(self):
-        self.sessfd.write('</pre></body></html>')
-        self.sessfd.close()
+        if self.sessfd:
+            self.sessfd.write('</pre></body></html>')
+            self.sessfd.close()
 
     def log(self, frame, payload, escape=True):
         if escape:
