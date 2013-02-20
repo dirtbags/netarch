@@ -518,14 +518,12 @@ class Dispatch(object):
             heapq.heappush(self.tops, (f, pc, filename, fd, pos))
 
     def _get_sequencer(self, proto):
-        if not proto:
-            return Dumb_Resequence()
-        elif proto == TCP:
+        if proto == TCP:
             return TCP_Resequence()
-        elif proto == ICMP:
+        elif proto in (ICMP, UDP):
             return Dumb_Resequence()
         else:
-            raise NotImplementedError()
+            raise NotImplementedError(proto)
 
     def __iter__(self):
         while self.tops:
