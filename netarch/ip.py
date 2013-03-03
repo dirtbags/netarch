@@ -531,12 +531,13 @@ class Dispatch(object):
             if not self.last:
                 self.last = (filename, pos)
             frame = Frame(f, pc.linktype)
-            if frame.hash not in self.sessions:
-                self.sessions[frame.hash] = self._get_sequencer(frame.protocol)
-            ret = self.sessions[frame.hash].handle(frame)
-            if ret:
-                yield frame.hash, ret
-                self.last = None
+            if frame.protocol:
+                if frame.hash not in self.sessions:
+                    self.sessions[frame.hash] = self._get_sequencer(frame.protocol)
+                ret = self.sessions[frame.hash].handle(frame)
+                if ret:
+                    yield frame.hash, ret
+                    self.last = None
 
             self._read(pc, filename, fd)
 
