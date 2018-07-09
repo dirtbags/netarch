@@ -1,24 +1,22 @@
-#! /usr/bin/python
+#! /usr/bin/python3
 
 ## IP resequencing + protocol reversing skeleton
-## 2008 Massive Blowout
+## 2008, 2018 Neale Pickett
 
-import StringIO
 import struct
 import socket
 import warnings
 import heapq
-import gapstr
 import time
 try:
     import pcap
 except ImportError:
-    import py_pcap as pcap
+    import netarch.py_pcap as pcap
 import os
 import cgi
 import urllib
-import UserDict
-from __init__ import *
+from netarch import *
+from netarch.gapstr import *
 
 def unpack_nybbles(byte):
     return (byte >> 4, byte & 0x0F)
@@ -329,7 +327,7 @@ class TCP_Resequence:
             if key > seq:
                 # Dropped frame(s)
                 if key - seq > 6000:
-                    print "Gosh, bob, %d dropped octets sure is a lot!" % (key - seq)
+                    print("Gosh, %d dropped octets sure is a lot!" % (key - seq))
                 gs.append(key - seq)
                 seq = key
             if key == seq:
@@ -350,9 +348,9 @@ class TCP_Resequence:
         if seq != pkt.ack:
             # Drop at the end
             if pkt.ack - seq > 6000:
-                print 'Large drop at end of session!'
-                print '    %s' % ((pkt, pkt.time),)
-                print '    %x  %x' % (pkt.ack, seq)
+                print('Large drop at end of session!')
+                print('    %s' % ((pkt, pkt.time),))
+                print('    %x  %x' % (pkt.ack, seq))
             gs.append(pkt.ack - seq)
 
         return ret
@@ -490,7 +488,7 @@ class Dispatch:
 class NeedMoreData(Exception):
     pass
 
-class Packet(UserDict.DictMixin):
+class Packet:
     """Base class for a packet from a binary protocol.
 
     This is a base class for making protocol reverse-engineering easier.
@@ -549,16 +547,16 @@ class Packet(UserDict.DictMixin):
             assert a in b, ('%r not in %r' % (a, b))
 
     def show(self):
-        print '%s %3s: %s' % (self.__class__.__name__,
+        print('%s %3s: %s' % (self.__class__.__name__,
                               self.opcode,
-                              self.opcode_desc)
+                              self.opcode_desc))
         if self.firstframe:
-            print '    %s:%d -> %s:%d (%s.%06dZ)' % (self.firstframe.src_addr,
+            print('    %s:%d -> %s:%d (%s.%06dZ)' % (self.firstframe.src_addr,
                                                      self.firstframe.sport,
                                                      self.firstframe.dst_addr,
                                                      self.firstframe.dport,
                                                      time.strftime('%Y-%m-%dT%T', time.gmtime(self.firstframe.time)),
-                                                     self.firstframe.time_usec)
+                                                     self.firstframe.time_usec))
 
         if self.parts:
             dl = len(self.parts[-1])
@@ -568,12 +566,12 @@ class Packet(UserDict.DictMixin):
                     p.append('%3d!' % x)
                 else:
                     p.append('%3d' % x)
-            print '           parts: (%s) +%d bytes' % (','.join(p), dl)
+            print('           parts: (%s) +%d bytes' % (','.join(p), dl))
 
         keys = self.params.keys()
         keys.sort()
         for k in keys:
-            print '    %12s: %s' % (k, self.params[k])
+            print('    %12s: %s' % (k, self.params[k]))
 
         if self.subpackets:
             for p in self.subpackets:
@@ -582,7 +580,7 @@ class Packet(UserDict.DictMixin):
             try:
                 self.payload.hexdump()
             except AttributeError:
-                print '         payload: %r' % self.payload
+                print('         payload: %r' % self.payload)
 
     def parse(self, data):
         """Parse a chunk of data (possibly a GapString).
@@ -600,7 +598,7 @@ class Packet(UserDict.DictMixin):
         """Handle data from a Session class."""
 
         data = self.parse(data)
-        if self.opcode <> None:
+        if self.opcode != None:
             try:
                 f = getattr(self, 'opcode_%s' % self.opcode)
             except AttributeError:
@@ -673,7 +671,7 @@ class Session:
                 self.pending[saddr] = (f, data)
             self.count += 1
         except:
-            print ('Lastpos: %r' % (lastpos,))
+            print('Lastpos: %r' % (lastpos,))
             raise
 
     def process(self, packet):
@@ -701,7 +699,7 @@ class Session:
                                       urllib.quote(fn, ''))
         fullfn = os.path.join(self.basename, fn)
         fullfn2 = os.path.join(self.basename2, fn)
-        print '  writing %s' % (fn,)
+        print('  writing %s' % (fn,))
         fd = file(fullfn, 'w')
         try:
             os.unlink(fullfn2)
