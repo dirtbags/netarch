@@ -9,6 +9,36 @@ class TriloBytes:
 
 This allows you to represent on-wire transactions with holes in the middle,
 due to eg. dropped packets.
+
+>>> tb = TriloBytes(b'hi')
+>>> bytes(tb)
+b'hi'
+>>> bytes(tb[:40])
+b'hi'
+
+>>> tb = TriloBytes(b'hi') + [None] * 3
+>>> bytes(tb)
+b'hi???'
+>>> bytes(tb[:40])
+b'hi???'
+>>> bytes(tb[:3])
+b'hi?'
+>>> bytes(tb[-4:])
+b'i???'
+>>> bytes(tb + tb)
+b'hi???hi???'
+>>> bytes(tb ^ 1)
+b'ih???'
+>>> bytes(tb ^ [32, 1])
+b'Hh???'
+
+>>> tb = TriloBytes(b'hi', drop=b'DROP')
+>>> bytes(tb)
+b'hi'
+>>> tb = tb + [None] * 7
+>>> bytes(tb)
+b'hiOPDROPD'
+
 """
 
     def __init__(self, initializer=(), drop=b'?'):
@@ -17,23 +47,29 @@ due to eg. dropped packets.
 
     @classmethod
     def fromhex(cls, string):
+        """
+        >>> bytes(TriloBytes.fromhex("616263"))
+        b'abc'
+        """
+        
         return cls(bytes.fromhex(string))
 
-    @classmethod
-    def join(cls, *objects):
-        contents = []
-        for o in objects:
-            # print(o)
-            contents.extend(o._contents)
-
-        new = cls()
-        new._contents = tuple(contents)
-        return new
-
     def __len__(self):
+        """
+        >>> len(TriloBytes(b'abc'))
+        3
+        """
+        
         return len(self._contents)
 
     def __nonzero__(self):
+        """
+        >>> 10 if TriloBytes() else -10
+        -10
+        >>> 10 if TriloBytes(b'a') else -10
+        10
+        """
+        
         return len(self) > 0
 
     def __getitem__(self, key):
@@ -74,9 +110,22 @@ due to eg. dropped packets.
         return TriloBytes(((x^y if x else None) for x,y in zip(self._contents, itertools.cycle(mask))), drop=self._drop)
 
     def __repr__(self):
+        """
+        >>> TriloBytes(b'abc')
+        <TriloBytes missing 0 of 3>
+        >>> TriloBytes(b'abc') + [None]
+        <TriloBytes missing 1 of 4>
+        """
+        
         return '<TriloBytes missing %d of %d>' % (self.missing(), len(self))
 
     def missing(self):
+        """
+        >>> TriloBytes(b'abc').missing()
+        0
+        >>> (TriloBytes(b'abc') + [None, None]).missing()
+        2
+        """
         return self._contents.count(None)
 
     def map(self, func, *args):
@@ -84,21 +133,5 @@ due to eg. dropped packets.
 
 
 if __name__ == '__main__':
-    gs = TriloBytes(b'hi')
-    assert bytes(gs) == b'hi'
-    assert bytes(gs[:40]) == b'hi'
-
-    gs = gs + [None] * 3
-    assert bytes(gs) == b'hi???'
-    assert bytes(gs[:40]) == b'hi???'
-    assert bytes(gs[:3]) == b'hi?'
-    assert bytes(gs[-4:]) == b'i???'
-    assert bytes(gs + gs) == b'hi???hi???'
-    assert bytes(gs ^ 1) == b'ih???'
-    assert bytes(gs ^ [32, 1]) == b'Hh???'
-    
-    gs = TriloBytes(b'hi', drop=b'DROP')
-    assert bytes(gs) == b'hi'
-    
-    gs = gs + [None] * 7
-    assert bytes(gs) == b'hiOPDROPD'
+    import doctest
+    doctest.testmod()
