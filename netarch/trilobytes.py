@@ -7,37 +7,37 @@ import itertools
 class TriloBytes:
     """Three-level byte array (0, 1, Missing).
 
-This allows you to represent on-wire transactions with holes in the middle,
-due to eg. dropped packets.
-
->>> tb = TriloBytes(b'hi')
->>> bytes(tb)
-b'hi'
->>> bytes(tb[:40])
-b'hi'
-
->>> tb = TriloBytes(b'hi') + [None] * 3
->>> bytes(tb)
-b'hi???'
->>> bytes(tb[:40])
-b'hi???'
->>> bytes(tb[:3])
-b'hi?'
->>> bytes(tb[-4:])
-b'i???'
->>> bytes(tb + tb)
-b'hi???hi???'
->>> bytes(tb ^ 1)
-b'ih???'
->>> bytes(tb ^ [32, 1])
-b'Hh???'
-
->>> tb = TriloBytes(b'hi', drop=b'DROP')
->>> bytes(tb)
-b'hi'
->>> tb += [None] * 7
->>> bytes(tb)
-b'hiOPDROPD'
+    This allows you to represent on-wire transactions with holes in the middle,
+    due to eg. dropped packets.
+    
+    >>> tb = TriloBytes(b'hi')
+    >>> bytes(tb)
+    b'hi'
+    >>> bytes(tb[:40])
+    b'hi'
+    
+    >>> tb = TriloBytes(b'hi') + [None] * 3
+    >>> bytes(tb)
+    b'hi???'
+    >>> bytes(tb[:40])
+    b'hi???'
+    >>> bytes(tb[:3])
+    b'hi?'
+    >>> bytes(tb[-4:])
+    b'i???'
+    >>> bytes(tb + tb)
+    b'hi???hi???'
+    >>> bytes(tb ^ 1)
+    b'ih???'
+    >>> bytes(tb ^ [32, 1])
+    b'Hh???'
+    
+    >>> tb = TriloBytes(b'hi', drop=b'DROP')
+    >>> bytes(tb)
+    b'hi'
+    >>> tb += [None] * 7
+    >>> bytes(tb)
+    b'hiOPDROPD'
 
 """
 
