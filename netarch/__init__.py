@@ -97,9 +97,9 @@ class HexDumper:
         self.output.write(' '.join(self.hexes[:8]))
         self.output.write('  ')
         self.output.write(' '.join(self.hexes[8:]))
-        self.output.write('  ┆')
+        self.output.write('  ')
         self.output.write(''.join(self.chars))
-        self.output.write('┆\n')
+        self.output.write('\n')
 
         self.hexes = []
         self.chars = []
