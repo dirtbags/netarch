@@ -16,7 +16,7 @@ except ImportError:
 import os
 import cgi
 import urllib
-from netarch import *
+from netarch import unpack, hexdump
 from netarch.trilobytes import TriloBytes
 
 def unpack_nybbles(byte):
@@ -41,6 +41,7 @@ class Frame:
     def __init__(self, pkt):
         ((self.time, self.time_usec, _), frame) = pkt
 
+        
         # Ethernet
         (self.eth_dhost,
          self.eth_shost,
