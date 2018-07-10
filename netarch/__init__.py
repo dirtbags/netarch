@@ -41,7 +41,7 @@ decch = (u'␀␁␂␃␄␅␆␇␈␉␊␋␌␍␎␏'
 
 cgach = (u'␀☺☻♥♦♣♠•◘○◙♂♀♪♫☼'
          u'►◄↕‼¶§▬↨↑↓→←∟↔▲▼'
-         u'␣!"#$%&\'()*+,-./'
+         u' !"#$%&\'()*+,-./'
          u'0123456789:;<=>?'
          u'@ABCDEFGHIJKLMNO'
          u'PQRSTUVWXYZ[\]^_'
@@ -59,80 +59,75 @@ cgach = (u'␀☺☻♥♦♣♠•◘○◙♂♀♪♫☼'
 
 
 def unpack(fmt, buf):
-    """Unpack buf based on fmt, return the rest as a string."""
+    """Unpack buf based on fmt, return the remainder."""
 
     size = struct.calcsize(fmt)
-    vals = struct.unpack(fmt, str(buf[:size]))
+    vals = struct.unpack(fmt, bytes(buf[:size]))
     return vals + (buf[size:],)
 
 
 class HexDumper:
-    def __init__(self, fd=sys.stdout):
-        self.fd = fd
+    def __init__(self, output, charset=stdch):
         self.offset = 0
-        self.buf = []
+        self.last = None
+        self.elided = False
+        self.hexes = []
+        self.chars = []
+        self.charset = charset
+        self.output = output
 
-    def _to_printable(self, c):
-        if not c:
-            return u'◌'
-        else:
-            return cgach[ord(c)]
-
-
-    def write(self, what):
-        self.fd.write(what.encode('utf-8'))
-
-    def _flush(self):
-        if not self.buf:
+    def _spit(self):
+        if self.chars == self.last:
+            if not self.elided:
+                self.output.write('*\n')
+                self.elided = True
+            self.hexes = []
+            self.chars = []
             return
+        self.last = self.chars[:]
+        self.elided = False
 
-        o = []
-        for c in self.buf:
-            if c:
-                o.append(u'%02x' % ord(c))
-            else:
-                o.append(u'--')
-        o +=  ([u'  '] * (16 - len(self.buf)))
-        p = [self._to_printable(c) for c in self.buf]
+        pad = 16 - len(self.chars)
+        self.hexes += ['  '] * pad
 
-        self.write(u'%08x  ' % self.offset)
+        self.output.write('{:08x}  '.format(self.offset - len(self.chars)))
+        self.output.write(' '.join(self.hexes[:8]))
+        self.output.write('  ')
+        self.output.write(' '.join(self.hexes[8:]))
+        self.output.write('  |')
+        self.output.write(''.join(self.chars))
+        self.output.write('|\n')
 
-        self.write(u' '.join(o[:8]))
-        self.write(u'  ')
-        self.write(u' '.join(o[8:]))
+        self.hexes = []
+        self.chars = []
 
-        self.write(u'  ┆')
+    def add(self, b):
+        if self.offset and self.offset % 16 == 0:
+            self._spit()
 
-        self.write(u''.join(p))
+        if b is None:
+            h = '⬜'
+            c = '�'
+        else:
+            h = '{:02x}'.format(b)
+            c = self.charset[b]
+        self.chars.append(c)
+        self.hexes.append(h)
 
-        self.write(u'┆\n')
+        self.offset += 1
 
-        self.offset += len(self.buf)
-        self.buf = []
-
-    def dump_chr(self, c):
-        self.buf.append(c)
-        if len(self.buf) == 16:
-            self._flush()
-
-    def dump_drop(self):
-        self.buf.append(None)
-        if len(self.buf) == 16:
-            self._flush()
-
-    def finish(self):
-        self._flush()
-        self.write('%08x\n' % self.offset)
+    def done(self):
+        self._spit()
+        self.output.write('{:08x}\n'.format(self.offset))
 
 
-def hexdump(buf, f=sys.stdout):
+def hexdump(buf, f=sys.stdout, charset=cgach):
     "Print a hex dump of buf"
 
-    d = HexDumper()
-
-    for c in buf:
-        d.dump_chr(c)
-    d.finish()
+    h = HexDumper(output=f, charset=charset)
+    for b in buf:
+        h.add(b)
+    h.done()
 
 
 def cstring(buf):

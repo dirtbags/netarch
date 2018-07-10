@@ -11,16 +11,16 @@ import time
 try:
     import pcap
 except ImportError:
+    warnings.warn("Using slow pure-python pcap library")
     import netarch.py_pcap as pcap
 import os
 import cgi
 import urllib
 from netarch import *
-from netarch.gapstr import *
+from netarch.trilobytes import TriloBytes
 
 def unpack_nybbles(byte):
     return (byte >> 4, byte & 0x0F)
-
 
 transfers = os.environ.get('TRANSFERS', 'transfers')
 
@@ -130,15 +130,17 @@ class Frame:
 
 
     def get_src_addr(self):
-        saddr = struct.pack('!i', self.saddr)
-        self.src_addr = socket.inet_ntoa(saddr)
-        return self.src_addr
+        if not hasattr(self, "_src_addr"):
+            saddr = struct.pack('!i', self.saddr)
+            self._src_addr = socket.inet_ntoa(saddr)
+        return self._src_addr
     src_addr = property(get_src_addr)
 
     def get_dst_addr(self):
-        daddr = struct.pack('!i', self.daddr)
-        self.dst_addr = socket.inet_ntoa(daddr)
-        return self.dst_addr
+        if not hasattr(self, "_dst_addr"):
+            daddr = struct.pack('!i', self.daddr)
+            self._dst_addr = socket.inet_ntoa(daddr)
+        return self._dst_addr
     dst_addr = property(get_dst_addr)
 
     def __repr__(self):
@@ -229,7 +231,7 @@ class TCP_Recreate:
 
 
 
-        return ethhdr + iphdr + tcphdr + str(payload)
+        return ethhdr + iphdr + tcphdr + bytes(payload)
 
     def write_pkt(self, timestamp, cli, payload, flags=0):
         p = self.packet(cli, payload, flags)
@@ -307,16 +309,14 @@ class TCP_Resequence:
 
         pending = self.pending[xdi]
         # Get a sorted list of sequence numbers
-        keys = pending.keys()
-        keys.sort()
+        keys = sorted(pending)
 
         # Build up return value
-        gs = gapstr.GapString()
+        gs = TriloBytes()
         if keys:
-            f = pending[keys[0]]
-            ret = (xdi, f, gs)
+            first = pending[keys[0]]
         else:
-            ret = (xdi, None, gs)
+            first = None
 
         # Fill in gs with our frames
         for key in keys:
@@ -326,13 +326,14 @@ class TCP_Resequence:
             frame = pending[key]
             if key > seq:
                 # Dropped frame(s)
-                if key - seq > 6000:
-                    print("Gosh, %d dropped octets sure is a lot!" % (key - seq))
-                gs.append(key - seq)
+                dropped = key - seq
+                if dropped > 6000:
+                    print("Gosh, %d dropped octets sure is a lot!" % (dropped))
+                gs += [None] * dropped
                 seq = key
             if key == seq:
                 # Default
-                gs.append(frame.payload)
+                gs += frame.payload
                 seq += len(frame.payload)
                 del pending[key]
             elif key < seq:
@@ -347,13 +348,14 @@ class TCP_Resequence:
                     self.handle = self.handle_drop
         if seq != pkt.ack:
             # Drop at the end
-            if pkt.ack - seq > 6000:
+            dropped = pkt.ack - seq
+            if dropped > 6000:
                 print('Large drop at end of session!')
                 print('    %s' % ((pkt, pkt.time),))
                 print('    %x  %x' % (pkt.ack, seq))
-            gs.append(pkt.ack - seq)
+            gs += [None] * dropped
 
-        return ret
+        return (xdi, first, gs)
 
 
     def handle(self, pkt):
@@ -445,14 +447,14 @@ class Dispatch:
         if not literal:
             parts = filename.split(':::')
             fn = parts[0]
-            fd = file(fn)
+            fd = open(fn, "rb")
             pc = pcap.open(fd)
             if len(parts) > 1:
                 pos = int(parts[1])
                 fd.seek(pos)
             self._read(pc, fn, fd)
         else:
-            fd = file(filename)
+            fd = open(filename, "rb")
             pc = pcap.open(fd)
             self._read(pc, filename, fd)
 
@@ -566,10 +568,9 @@ class Packet:
                     p.append('%3d!' % x)
                 else:
                     p.append('%3d' % x)
-            print('           parts: (%s) +%d bytes' % (','.join(p), dl))
+            print('           parts: (%s) +%d(0x%x) octets' % (','.join(p), dl, dl))
 
-        keys = self.params.keys()
-        keys.sort()
+        keys = sorted(self.params)
         for k in keys:
             print('    %12s: %s' % (k, self.params[k]))
 
@@ -578,12 +579,12 @@ class Packet:
                 p.show()
         elif self.payload:
             try:
-                self.payload.hexdump()
+                hexdump(self.payload)
             except AttributeError:
                 print('         payload: %r' % self.payload)
 
     def parse(self, data):
-        """Parse a chunk of data (possibly a GapString).
+        """Parse a chunk of data (possibly a TriloBytes).
 
         Anything returned is not part of this packet and will be passed
         in to a subsequent packet.
@@ -640,12 +641,12 @@ class Session:
 
         pass
 
-    def handle(self, is_srv, frame, gs, lastpos):
+    def handle(self, is_srv, frame, data, lastpos):
         """Handle a data burst.
 
         @param is_srv   Is this from the server?
         @param frame    A frame associated with this packet, or None if it's all drops
-        @param gs       A gapstring of the data
+        @param data     A TriloBytes of the data
         @param lastpos  Last position in the source file, for debugging
 
         """
@@ -657,18 +658,18 @@ class Session:
         try:
             saddr = frame.saddr
             try:
-                (f, data) = self.pending.pop(saddr)
+                (f, buf) = self.pending.pop(saddr)
             except KeyError:
                 f = frame
-                data = gapstr.GapString()
-            data.extend(gs)
+                buf = TriloBytes()
+            buf += data
             try:
-                while data:
+                while buf:
                     p = self.Packet(self, f)
-                    data = p.handle(data)
+                    buf = p.handle(buf)
                     self.process(p)
             except NeedMoreData:
-                self.pending[saddr] = (f, data)
+                self.pending[saddr] = (f, buf)
             self.count += 1
         except:
             print('Lastpos: %r' % (lastpos,))
@@ -700,7 +701,7 @@ class Session:
         fullfn = os.path.join(self.basename, fn)
         fullfn2 = os.path.join(self.basename2, fn)
         print('  writing %s' % (fn,))
-        fd = file(fullfn, 'w')
+        fd = open(fullfn, 'w')
         try:
             os.unlink(fullfn2)
         except OSError:

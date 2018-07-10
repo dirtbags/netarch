@@ -1,13 +1,16 @@
-#! /usr/bin/python
+#! /usr/bin/python3
 
 import struct
+import builtins
 
 _MAGIC = 0xA1B2C3D4
 
-class pcap:
-    def __init__(self, stream, mode='rb', snaplen=65535, linktype=1):
+class PcapFile:
+    def __init__(self, stream, mode='r', snaplen=65535, linktype=1):
+        if 'b' not in mode:
+            mode += 'b'
         try:
-            self.stream = file(stream, mode)
+            self.stream = builtins.open(stream, mode)
         except TypeError:
             self.stream = stream
         try:
@@ -16,7 +19,7 @@ class pcap:
         except IOError:
             hdr = None
 
-        if hdr:
+        if 'r' in mode:
             # We're in read mode
             self._endian = None
             for endian in '<>':
@@ -71,17 +74,22 @@ class pcap:
                 break
             yield r
 
-
-open = pcap
-open_offline = pcap
+open = PcapFile
+pcap = PcapFile
+open_offline = PcapFile
 
 
 if __name__ == '__main__':
-    p = open('test.pcap', 'w')  # Create a new file
-    p.write(((0, 0, 3), 'foo')) # Add a packet
-    p.write(((0, 0, 3), 'bar'))
+    import io
+    
+    f = io.BytesIO()
+    p = PcapFile(f, 'w')
+    p.write(((0, 0, 3), b'foo')) # Add a packet
+    p.write(((0, 0, 3), b'bar'))
     del p
-    p = open(file('test.pcap')) # Also takes file objects
+    
+    f.seek(0)
+    p = PcapFile(f)
     assert ((p.version, p.thiszone, p.sigfigs, p.snaplen, p.linktype) ==
             ((2, 4), 0, 0, 65535, 1))
-    assert ([i for i in p] == [((0, 0, 3), 'foo'), ((0, 0, 3), 'bar')])
+    assert ([i for i in p] == [((0, 0, 3), b'foo'), ((0, 0, 3), b'bar')])

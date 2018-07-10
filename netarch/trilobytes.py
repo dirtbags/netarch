@@ -35,7 +35,7 @@ b'Hh???'
 >>> tb = TriloBytes(b'hi', drop=b'DROP')
 >>> bytes(tb)
 b'hi'
->>> tb = tb + [None] * 7
+>>> tb += [None] * 7
 >>> bytes(tb)
 b'hiOPDROPD'
 
