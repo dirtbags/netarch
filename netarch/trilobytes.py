@@ -42,9 +42,9 @@ class TriloBytes:
     >>> tb = TriloBytes(b'00')^1
     >>> tb[0]
     1
+    
     >>> bytes(TriloBytes(b'00'))
     b'\x00'
-
 """
 
     def __init__(self, initializer=(), drop=b'?'):
