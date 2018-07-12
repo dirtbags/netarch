@@ -39,6 +39,12 @@ class TriloBytes:
     >>> bytes(tb)
     b'hiOPDROPD'
 
+    >>> tb = TriloBytes(b'00')^1
+    >>> tb[0]
+    1
+    
+    >>> bytes(TriloBytes(b'00'))
+    b'\x00'
 """
 
     def __init__(self, initializer=(), drop=b'?'):
@@ -84,7 +90,7 @@ class TriloBytes:
             yield val
 
     def __bytes__(self):
-        return bytes((v or d for v,d in zip(self,itertools.cycle(self._drop))))
+        return bytes((d if v is None else v for v,d in zip(self,itertools.cycle(self._drop))))
 
     def __add__(self, other):
         try:
@@ -107,7 +113,7 @@ class TriloBytes:
             mask[0]
         except TypeError:
             mask = [mask]
-        return TriloBytes(((x^y if x else None) for x,y in zip(self._contents, itertools.cycle(mask))), drop=self._drop)
+        return TriloBytes(((None if x is None or y is None else x^y) for x,y in zip(self._contents, itertools.cycle(mask))), drop=self._drop)
 
     def __repr__(self):
         """
