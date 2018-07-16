@@ -15,7 +15,7 @@ except ImportError:
     import netarch.py_pcap as pcap
 import os
 import cgi
-import urllib
+import urllib.parse
 from netarch import unpack, hexdump
 from netarch.trilobytes import TriloBytes
 
@@ -698,11 +698,11 @@ class Session:
         fn = '%d-%s~%d-%s~%d---%s' % (frame.time,
                                       frame.src_addr, frame.sport,
                                       frame.dst_addr, frame.dport,
-                                      urllib.quote(fn, ''))
+                                      urllib.parse.quote(fn, ''))
         fullfn = os.path.join(self.basename, fn)
         fullfn2 = os.path.join(self.basename2, fn)
         print('  writing %s' % (fn,))
-        fd = open(fullfn, 'w')
+        fd = open(fullfn, 'wb')
         try:
             os.unlink(fullfn2)
         except OSError:
