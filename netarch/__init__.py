@@ -1,5 +1,6 @@
 #! /usr/bin/python3
 
+import binascii
 import sys
 import struct
 
@@ -60,6 +61,25 @@ cgach = (
 	'≡±≥≤⌠⌡÷≈°∙·√ⁿ²■¤'
 )
 
+fluffych = (
+    '·☺☻♥♦♣♠•◘○◙♂♀♪♫☼'
+	'►◄↕‼¶§▬↨↑↓→←∟↔▲▼'
+	' !"#$%&\'()*+,-./'
+	'0123456789:;<=>?'
+	'@ABCDEFGHIJKLMNO'
+	'PQRSTUVWXYZ[\]^_'
+	'`abcdefghijklmno'
+	'pqrstuvwxyz{|}~⌂'
+	'ÇüéâäàåçêëèïîìÄÅ'
+	'ÉæÆôöòûùÿÖÜ¢£¥₧ƒ'
+	'áíóúñÑªº¿⌐¬½¼¡«»'
+	'░▒▓│┤╡╢╖╕╣║╗╝╜╛┐'
+	'└┴┬├─┼╞╟╚╔╩╦╠═╬╧'
+	'╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀'
+	'αßΓπΣσµτΦΘΩδ∞φε∩'
+	'≡±≥≤⌠⌡÷≈°∀∃√ⁿ²■¤'
+)
+
 
 def unpack(fmt, buf):
     """Unpack buf based on fmt, return the remainder."""
@@ -70,7 +90,7 @@ def unpack(fmt, buf):
 
 
 class HexDumper:
-    def __init__(self, output, charset=stdch):
+    def __init__(self, output, charset=fluffych):
         self.offset = 0
         self.last = None
         self.elided = False
@@ -124,7 +144,7 @@ class HexDumper:
         self.output.write('{:08x}\n'.format(self.offset))
 
 
-def hexdump(buf, f=sys.stdout, charset=cgach):
+def hexdump(buf, f=sys.stdout, charset=fluffych):
     "Print a hex dump of buf"
 
     h = HexDumper(output=f, charset=charset)
@@ -246,7 +266,7 @@ def bin(i, bits=None):
 def unhex(s):
     """Decode a string as hex, stripping whitespace first"""
 
-    return [ord(i) for i in s.replace(' ', '').decode('hex')]
+    return binascii.unhexlify(s.replace(' ', ''))
 
 
 def pp(value, bits=16):
