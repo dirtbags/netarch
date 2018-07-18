@@ -125,6 +125,9 @@ class TriloBytes:
         
         return '<TriloBytes missing %d of %d>' % (self.missing(), len(self))
 
+    def decode(self, codec):
+        return bytes(self).decode(codec)
+    
     def missing(self):
         """
         >>> TriloBytes(b'abc').missing()

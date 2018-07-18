@@ -8,6 +8,7 @@ import socket
 import warnings
 import heapq
 import time
+import io
 try:
     import pcap
 except ImportError:
@@ -564,12 +565,16 @@ class Packet:
         if self.parts:
             dl = len(self.parts[-1])
             p = []
+            xp = []
             for x in self.parts[:-1]:
                 if x == dl:
                     p.append('%3d!' % x)
+                    xp.append('%3x!' % x)
                 else:
                     p.append('%3d' % x)
-            print('           parts: (%s) +%d(0x%x) octets' % (','.join(p), dl, dl))
+                    xp.append('%3x' % x)
+            print('           parts: (%s) +%d octets' % (','.join(p), dl))
+            print('         0xparts: (%s) +%x octets' % (','.join(xp), dl))
 
         keys = sorted(self.params)
         for k in keys:
@@ -721,7 +726,9 @@ class Session:
 class HtmlSession(Session):
     def __init__(self, frame):
         Session.__init__(self, frame)
-        self.sessfd = self.open_out('session.html')
+        fd = self.open_out('session.html')
+        fbuf = io.BufferedWriter(fd, 1024)
+        self.sessfd = io.TextIOWrapper(fbuf, encoding="utf-8")
         self.sessfd.write('''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html
   PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
