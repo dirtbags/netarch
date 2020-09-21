@@ -13,12 +13,20 @@ try:
     import pcap
 except ImportError:
     warnings.warn("Using slow pure-python pcap library")
-    import netarch.py_pcap as pcap
+    from . import py_pcap as pcap
 import os
 import cgi
 import urllib.parse
-from netarch import unpack, hexdump
-from netarch.trilobytes import TriloBytes
+from .hexdump import hexdump
+from .trilobytes import TriloBytes
+
+def unpack(fmt, buf):
+    """Unpack buf based on fmt, return the remainder."""
+
+    size = struct.calcsize(fmt)
+    vals = struct.unpack(fmt, bytes(buf[:size]))
+    return vals + (buf[size:],)
+
 
 def unpack_nybbles(byte):
     return (byte >> 4, byte & 0x0F)
@@ -65,7 +73,6 @@ class Frame:
              p) = unpack('!HHBBH6si6si', p)
             self.saddr = self.ar_sip
             self.daddr = self.ar_tip
-            self.__repr__ = self.__arp_repr__
         elif self.eth_type == IP:
             # IP
             (self.ihlvers,
@@ -146,18 +153,18 @@ class Frame:
     dst_addr = property(get_dst_addr)
 
     def __repr__(self):
-        return ('<Frame %s %s:%r(%08x) -> %s:%r(%08x) length %d>' %
-                (self.name,
-                 self.src_addr, self.sport, self.seq,
-                 self.dst_addr, self.dport, self.ack,
-                 len(self.payload)))
-
-    def __arp_repr__(self):
-        return '<Frame %s %s(%s) -> %s(%s)>' % (self.name,
-                                                str_of_eth(self.ar_sha),
-                                                self.src_addr,
-                                                str_of_eth(self.ar_tha),
-                                                self.dst_addr)
+        if self.eth_type == ARP:
+            return '<Frame %s %s(%s) -> %s(%s)>' % (self.name,
+                                                    str_of_eth(self.ar_sha),
+                                                    self.src_addr,
+                                                    str_of_eth(self.ar_tha),
+                                                    self.dst_addr)
+        else:
+            return ('<Frame %s %s:%r(%08x) -> %s:%r(%08x) length %d>' %
+                    (self.name,
+                    self.src_addr, self.sport, self.seq,
+                    self.dst_addr, self.dport, self.ack,
+                    len(self.payload)))
 
 class TCP_Recreate:
     closed = True
@@ -358,16 +365,6 @@ class TCP_Resequence:
             gs += [None] * dropped
 
         return (xdi, first, gs)
-
-
-    def handle(self, pkt):
-        """Stub.
-
-        This function will never be called, it is immediately overridden
-        by __init__.  The current value of self.handle is the state.
-        """
-
-        raise NotImplementedError()
 
 
     def handle_handshake(self, pkt):

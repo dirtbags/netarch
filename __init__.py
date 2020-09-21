@@ -3,154 +3,8 @@
 import binascii
 import sys
 import struct
+from . import ip
 
-stdch = (
-    '␀·········␊··␍··'
-    '················'
-    ' !"#$%&\'()*+,-./'
-    '0123456789:;<=>?'
-    '@ABCDEFGHIJKLMNO'
-    'PQRSTUVWXYZ[\]^_'
-    '`abcdefghijklmno'
-    'pqrstuvwxyz{|}~·'
-    '················'
-    '················'
-    '················'
-    '················'
-    '················'
-    '················'
-    '················'
-    '················'
-)
-
-decch = (
-    '␀␁␂␃␄␅␆␇␈␉␊␋␌␍␎␏'
-    '␐␑␒␓␔␕␖␗␘␙␚·····'
-    '␠!"#$%&\'()*+,-./'
-    '0123456789:;<=>?'
-    '@ABCDEFGHIJKLMNO'
-    'PQRSTUVWXYZ[\]^_'
-    '`abcdefghijklmno'
-    'pqrstuvwxyz{|}~␡'
-    '················'
-    '················'
-    '················'
-    '················'
-    '················'
-    '················'
-    '················'
-    '················'
-)
-
-cgach = (
-    '□☺☻♥♦♣♠•◘○◙♂♀♪♫☼'
-	'►◄↕‼¶§▬↨↑↓→←∟↔▲▼'
-	' !"#$%&\'()*+,-./'
-	'0123456789:;<=>?'
-	'@ABCDEFGHIJKLMNO'
-	'PQRSTUVWXYZ[\]^_'
-	'`abcdefghijklmno'
-	'pqrstuvwxyz{|}~⌂'
-	'ÇüéâäàåçêëèïîìÄÅ'
-	'ÉæÆôöòûùÿÖÜ¢£¥₧ƒ'
-	'áíóúñÑªº¿⌐¬½¼¡«»'
-	'░▒▓│┤╡╢╖╕╣║╗╝╜╛┐'
-	'└┴┬├─┼╞╟╚╔╩╦╠═╬╧'
-	'╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀'
-	'αßΓπΣσµτΦΘΩδ∞φε∩'
-	'≡±≥≤⌠⌡÷≈°∙·√ⁿ²■¤'
-)
-
-fluffych = (
-    '·☺☻♥♦♣♠•◘○◙♂♀♪♫☼'
-	'►◄↕‼¶§▬↨↑↓→←∟↔▲▼'
-	' !"#$%&\'()*+,-./'
-	'0123456789:;<=>?'
-	'@ABCDEFGHIJKLMNO'
-	'PQRSTUVWXYZ[\]^_'
-	'`abcdefghijklmno'
-	'pqrstuvwxyz{|}~⌂'
-	'ÇüéâäàåçêëèïîìÄÅ'
-	'ÉæÆôöòûùÿÖÜ¢£¥₧ƒ'
-	'áíóúñÑªº¿⌐¬½¼¡«»'
-	'░▒▓│┤╡╢╖╕╣║╗╝╜╛┐'
-	'└┴┬├─┼╞╟╚╔╩╦╠═╬╧'
-	'╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀'
-	'αßΓπΣσµτΦΘΩδ∞φε∩'
-	'≡±≥≤⌠⌡÷≈°∀∃√ⁿ²■¤'
-)
-
-
-def unpack(fmt, buf):
-    """Unpack buf based on fmt, return the remainder."""
-
-    size = struct.calcsize(fmt)
-    vals = struct.unpack(fmt, bytes(buf[:size]))
-    return vals + (buf[size:],)
-
-
-class HexDumper:
-    def __init__(self, output, charset=fluffych):
-        self.offset = 0
-        self.last = None
-        self.elided = False
-        self.hexes = []
-        self.chars = []
-        self.charset = charset
-        self.output = output
-
-    def _spit(self):
-        if self.chars == self.last:
-            if not self.elided:
-                self.output.write('*\n')
-                self.elided = True
-            self.hexes = []
-            self.chars = []
-            return
-        self.last = self.chars[:]
-        self.elided = False
-
-        pad = 16 - len(self.chars)
-        self.hexes += ['  '] * pad
-
-        self.output.write('{:08x}  '.format(self.offset - len(self.chars)))
-        self.output.write(' '.join(self.hexes[:8]))
-        self.output.write('  ')
-        self.output.write(' '.join(self.hexes[8:]))
-        self.output.write('  ')
-        self.output.write(''.join(self.chars))
-        self.output.write('\n')
-
-        self.hexes = []
-        self.chars = []
-
-    def add(self, b):
-        if self.offset and self.offset % 16 == 0:
-            self._spit()
-
-        if b is None:
-            h = '⬜'
-            c = '�'
-        else:
-            h = '{:02x}'.format(b)
-            c = self.charset[b]
-        self.chars.append(c)
-        self.hexes.append(h)
-
-        self.offset += 1
-
-    def done(self):
-        self._spit()
-        self.output.write('{:08x}\n'.format(self.offset))
-
-
-def hexdump(buf, f=sys.stdout, charset=fluffych):
-    "Print a hex dump of buf"
-
-    h = HexDumper(output=f, charset=charset)
-    for b in buf:
-        h.add(b)
-    h.done()
 
 
 def cstring(buf):
@@ -158,10 +12,6 @@ def cstring(buf):
 
     i = buf.index('\0')
     return buf[:i]
-
-
-def md5sum(txt):
-    return md5.new(txt).hexdigest()
 
 
 def assert_equal(a, b):
@@ -218,7 +68,7 @@ class BitVector:
         """Iterate from LSB to MSB"""
 
         v = self._val
-        for i in xrange(self._len):
+        for _ in range(self._len):
             yield int(v & 1)
             v >>= 1
 
@@ -282,7 +132,7 @@ import string
 b64alpha = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 
 def from_b64(s, alphabet, codec='base64'):
-    tr = string.maketrans(alphabet, b64alpha)
+    tr = alphabet.maketrans(b64alpha)
     t = s.translate(tr)
     return t.decode(codec)
 
@@ -330,3 +180,15 @@ def _registry(encoding):
                 Esab64StreamReader, Esab64StreamWriter)
 
 codecs.register(_registry)
+
+def main(session):
+    s = None
+    reseq = ip.Dispatch(*sys.argv[1:])
+    for _, d in reseq:
+        srv, first, chunk = d
+        if not s:
+            s = session(first)
+        s.handle(srv, first, chunk, reseq.last)
+
+Session = ip.Session
+Packet = ip.Packet
