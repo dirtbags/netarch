@@ -533,9 +533,6 @@ class Packet:
     def __iter__(self):
         return self.params.__iter__()
 
-    def has_key(self, k):
-        return self.params.has_key(k)
-
     def keys(self):
         return self.params.keys()
 
@@ -586,8 +583,8 @@ class Packet:
             except AttributeError:
                 print('         payload: %r' % self.payload)
 
-    def parse(self, data):
-        """Parse a chunk of data (possibly a TriloBytes).
+    def decode(self, data):
+        """Decode a chunk of data (possibly a TriloBytes).
 
         Anything returned is not part of this packet and will be passed
         in to a subsequent packet.
@@ -596,12 +593,12 @@ class Packet:
 
         self.parts = [data]
         self.payload = data
-        return None
+        return False
 
     def handle(self, data):
         """Handle data from a Session class."""
 
-        data = self.parse(data)
+        data = self.decode(data)
         if self.opcode != None:
             try:
                 f = getattr(self, 'opcode_%s' % self.opcode)

@@ -1,194 +1,197 @@
-#! /usr/bin/python3
 
-import binascii
-import sys
-import struct
-from . import ip
+import typing
+import io
+from . import binary
 
-
-
-def cstring(buf):
-    "Return buf if buf were a C-style (NULL-terminate) string"
-
-    i = buf.index('\0')
-    return buf[:i]
+class Error(Exception):
+    """Base class for netshovel exceptions"""
+    pass
 
 
-def assert_equal(a, b):
-    assert a == b, ('%r != %r' % (a, b))
+class ShortError(Error):
+    """Exception raised when not enough data is available.
 
-
-def assert_in(a, *b):
-    assert a in b, ('%r not in %r' % (a, b))
-
-
-##
-## Binary and other base conversions
-##
-
-class BitVector:
-    def __init__(self, i=0, length=None):
-        try:
-            self._val = 0
-            for c in i:
-                self._val <<= 8
-                self._val += ord(c)
-            if length is not None:
-                self._len = length
-            else:
-                self._len = len(i) * 8
-        except TypeError:
-            self._val = i
-            if length is not None:
-                self._len = length
-            else:
-                self._len = 0
-                while i > 0:
-                    i >>= 1
-                    self._len += 1
-
-    def __len__(self):
-        return self._len
-
-    def __getitem__(self, idx):
-        if idx > self._len:
-            raise IndexError()
-        idx = self._len - idx
-        return int((self._val >> idx) & 1)
-
-    def __getslice__(self, a, b):
-        if b > self._len:
-            b = self._len
-        i = self._val >> (self._len - b)
-        l = b - a
-        mask = (1 << l) - 1
-        return BitVector(i & mask, length=l)
-
-    def __iter__(self):
-        """Iterate from LSB to MSB"""
-
-        v = self._val
-        for _ in range(self._len):
-            yield int(v & 1)
-            v >>= 1
+    Attributes:
+        wanted -- how much data we wanted
+        available -- how much data we had
+    """
+    
+    def __init__(self, wanted:int, available:int):
+        self.wanted = wanted
+        self.available = available
 
     def __str__(self):
-        r = ''
-        v = self._val
-        i = self._len
-        while i > 8:
-            o = ((v >> (i - 8)) & 0xFF)
-            r += chr(o)
-            i -= 8
-        if i > 0:
-            o = v & ((1 << i) - 1)
-            r += chr(o)
-        return r
-
-    def __int__(self):
-        return self._val
-
-    def __repr__(self):
-        l = list(self)
-        l.reverse()
-        return '<BitVector ' + ''.join(str(x) for x in l) + '>'
-
-    def __add__(self, i):
-        if isinstance(i, BitVector):
-            l = len(self) + len(i)
-            v = (int(self) << len(i)) + int(i)
-            return BitVector(v, l)
-        else:
-            raise ValueError("Can't extend with this type yet")
-
-    def bitstr(self):
-        bits = [str(x) for x in self]
-        bits.reverse()
-        return ''.join(bits)
+        return "Not enough data available: wanted %d, got %d" % (self.wanted, self.got)
 
 
-def bin(i, bits=None):
-    """Return the binary representation of i"""
+class MissingError(Error):
+    """Exception raised when gaps were present for code that can't handle gaps.
+    """
 
-    return BitVector(i, bits).bitstr()
+    def __init__(self):
+        pass
 
-
-def unhex(s):
-    """Decode a string as hex, stripping whitespace first"""
-
-    return binascii.unhexlify(s.replace(' ', ''))
-
-
-def pp(value, bits=16):
-    hexfmt = '%%0%dx' % (bits / 4)
-    return '%6d  0x%s  %s' % (value, (hexfmt % value), bin(value, bits))
-
-##
-## Codecs
-##
-import codecs
-import string
-
-b64alpha = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-
-def from_b64(s, alphabet, codec='base64'):
-    tr = alphabet.maketrans(b64alpha)
-    t = s.translate(tr)
-    return t.decode(codec)
-
-class Esab64Codec(codecs.Codec):
-    """Little-endian version of base64."""
-
-    ## This could be made nicer by better conforming to the codecs.Codec
-    ## spec.  For instance, raising the appropriate exceptions.
-    ##
-    ## Using BitVector makes the code very readable, but it is probably
-    ## slow.
-
-    b64_chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-    def decode(self, input, errors='strict'):
-        r = []
-        for i in range(0, len(input), 4):
-            v = BitVector()
-            for c in input[i:i+4]:
-                if c in ('=', ' ', '\n'):
-                    break
-                v += BitVector(self.b64_chars.index(c), 6)
-
-            # Normal base64 would start at the beginning
-            b = (v[10:12] + v[ 0: 6] +
-                 v[14:18] + v[ 6:10] +
-                 v[18:24] + v[12:14])
-
-            r.append(str(b))
-        return ''.join(r), len(input)
-
-    def encode(self, input, errors='strict'):
-        raise NotImplementedError()
+    def __str__(self):
+        return "Operation on missing bytes"
 
 
-class Esab64StreamWriter(Esab64Codec, codecs.StreamWriter):
-    pass
+class namedField(typing.NamedTuple):
+    key: str
+    value: str
 
-class Esab64StreamReader(Esab64Codec, codecs.StreamReader):
-    pass
+class headerField(typing.NamedTuple):
+    name: str
+    bits: int
+    value: typing.Any
+    order: binary.ByteOrder
 
-def _registry(encoding):
-    if encoding == 'esab64':
-        c = Esab64Codec()
-        return (c.encode, c.decode,
-                Esab64StreamReader, Esab64StreamWriter)
+class Packet:
+    def __init__(self, when, payload):
+        self.opcode = -1
+        self.description = "Undefined"
+        self.when = when
+        self.payload = payload
+        self.header = []
+        self.fields = []
 
-codecs.register(_registry)
+    def describeType(self) -> str:
+        """Returns a string with timestamp, opcode, and description of this packet"""
+        return "%s Opcode %d: %s"  % (self.when, self.opcode, self.description)
+    
+    def describeFields(self) -> str:
+        """Returns a multi-line string describing fields in this packet"""
+        lines = []
+        for k, v in self.fields:
+            lines.append("    %s: %s\n", k, v)
+        return "".join(lines)
 
-def main(session):
-    s = None
-    reseq = ip.Dispatch(*sys.argv[1:])
-    for _, d in reseq:
-        srv, first, chunk = d
-        if not s:
-            s = session(first)
-        s.handle(srv, first, chunk, reseq.last)
+    def describeHeader(self) -> str:
+        """Returns a multi-line string describing this packet's header structure"""
+        out = io.StringIO()
+        out.write(" 0                               1                            \n")
+        out.write(" 0 1 2 3 4 5 6 7 8 9 a b c d e f 0 1 2 3 4 5 6 7 8 9 a b c d e f\n")
+        
+        bitOffset = 0
+        for f in self.header:
+            bits = f.bits
+            while bits > 0:
+                if bitOffset == 0:
+                    out.write("+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n")
+                linebits = bits
+                if linebits+bitOffset > 0x20:
+                    linebits = 0x20 - bitOffset
 
-Session = ip.Session
-Packet = ip.Packet
+                nameval = "%s (0x%x)" % (f.name, f.value)
+                out.write("|" + nameval.center(linebits*2-1))
+
+                bitOffset += linebits
+                bits -= linebits
+                if linebits == 0x20:
+                    out.write("|\n")
+                    bitOffset = 0
+        out.write("+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n")
+        return out.getvalue()
+
+    def describe(self) -> str:
+        """Return a multi-line string describing this packet
+
+        This shows the timestamp, opcode, description, and hex dump.
+        If you set any values, those are displayed in the order they were set.
+
+        This will quickly get unweildy, especially for large conversations.
+        You are encouraged to implement your own describe() method.
+        """
+        out = io.StringIO()
+        out.write(self.describeType())
+        out.write("\n")
+        out.write(self.describeFields())
+        out.write(self.describeHeader())
+        out.write(self.payload.hexdump())
+        return out.getvalue()
+
+    def setValue(self, key:str, value:str):
+        """Set a value
+
+        This is intended to be used to note debugging information
+        that you'd like to see on each packet.
+        """
+        self.fields.append(namedField(key, value))
+
+    def setString(self, key:str, value:str):
+        """Set a string value, displaying its Python string representation"""
+        self.setValue(key, repr(value))
+
+    def setInt(self, key:str, value:int):
+        """Set an int value, displaying its decimal and hexadecimal representations"""
+        self.setValue(key, "%d == 0x%x" % (value, value))
+    setUInt = setInt
+
+    def setUInt32(self, key:str, value:int):
+        """Set a Uint32 value, dispalying its decimal and 0-padded hexadecimal representations"""
+        self.setValue(key, "%d == %04x" % (value, value))
+
+    def setBytes(self, key:str, value:str):
+        """Set a bytes value, displaying the hex encoding of the bytes"""
+        self.setValue(key, binascii.hexlify(value).encode("ascii"))
+
+    def peel(self, octets:int) -> bytes:
+        """Peel octets bytes off the Payload, returning those bytes"""
+        pllen = len(self.payload)
+        if octets > pllen:
+            raise ShortError(octets, pllen)
+        buf = self.payload[:octets]
+        if buf.missing() > 0:
+            raise MissingError()
+        self.payload = self.payload[octets:]
+        return buf.bytes()
+
+    def addHeaderField(self, order:binary.ByteOrder, name:str, bits:int, value:typing.Any):
+        """Add a field to the header field description."""
+        h = headerField(name, bits, value, order)
+        self.header.append(h)
+
+    def readUint(self, order:binary.ByteOrder, bits:int, name:str):
+        """Peel an unsigned integer of size bits, adding it to the header field"""
+        if bits not in (8, 16, 32, 64):
+            raise RuntimeError("Weird number of bits: %d" % bits)
+        octets = bits >> 3
+        b = self.peel(octets)
+        if bits == 8:
+            value = b[0]
+        elif bits == 16:
+            value = order.Uint16(b)
+        elif bits == 32:
+            value = order.Uint32(b)
+        elif bits == 64:
+            value = order.Uint64(b)
+        self.addHeaderField(order, name, bits, value)
+
+        return value
+
+    def uint8(self, name:str) -> int:
+        "Peel off a uint8 (aka byte)"
+        return self.readUint(binary.LittleEndian, 8, name)
+    
+    def uint16le(self, name:str) -> int:
+        "Peel off a uint16, little-endian"
+        return self.readUint(binary.LittleEndian, 16, name)
+
+    def uint32le(self, name:str) -> int:
+        "Peel off a uint32, little-endian"
+        return self.readUint(binary.LittleEndian, 32, name)
+
+    def uint64le(self, name:str) -> int:
+        "Peel off a uint64, little-endian"
+        return self.readUint(binary.LittleEndian, 64, name)
+
+    def uint16be(self, name:str) -> int:
+        "Peel off a uint64, big-endian"
+        return self.readUint(binary.BigEndian, 16, name)
+
+    def uint32be(self, name:str) -> int:
+        "Peel off a uint32, big-endian"
+        return self.readUint(binary.BigEndian, 32, name)
+
+    def uint64be(self, name:str) -> int:
+        "Peel off a uint44, big-endian"
+        return self.readUint(binary.BigEndian, 64, name)
