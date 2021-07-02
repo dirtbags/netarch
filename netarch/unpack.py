@@ -39,7 +39,7 @@ class Unpacker:
         self.endian = endian
         self.buf = buf
 
-    def uint(self, size, endian=None):
+    def uint(self, size, pos=0, endian=None):
         endian = endian or self.endian
         if size not in (8, 16, 32, 64):
             # XXX: I'm pretty sure this can be done, but I don't want to code it up right now.
@@ -53,20 +53,22 @@ class Unpacker:
             r = (1, 0, 3, 2,   5, 4, 7, 6)[:noctets]
         else:
             raise ValueError("Unsupported byte order")
-        pull, self.buf = self.buf[:noctets], self.buf[noctets:]
+        if pos < 0:
+            pos += len(self.buf)
+        pull, self.buf = self.buf[pos:pos+noctets], self.buf[:pos] + self.buf[pos+noctets:]
         acc = 0
         for i in r:
             acc = (acc << 8) | pull[i]
         return acc
         
-    def uint8(self):
-        return self.uint(8)
-    def uint16(self, endian=None):
-        return self.uint(16, endian)
-    def uint32(self, endian=None):
-        return self.uint(32, endian)
-    def uint64(self, endian=None):
-        return self.uint(64, endian)
+    def uint8(self, pos=0):
+        return self.uint(8, pos)
+    def uint16(self, pos=0, endian=None):
+        return self.uint(16, pos, endian)
+    def uint32(self, pos=0, endian=None):
+        return self.uint(32, pos, endian)
+    def uint64(self, pos=0, endian=None):
+        return self.uint(64, pos, endian)
 
 if __name__ == "__main__":
     import doctest

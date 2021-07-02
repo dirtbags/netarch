@@ -11,6 +11,9 @@ and room to grow these explorations into full-blown decoders.
 Get going
 =========
 
-Documentation sucks, sorry.
-The way we go about things is to copy `dumbdecode.py` to a new file,
+Documentation doesn't exist. Sorry.
+The way we go about things is to copy [dumbdecode](examples/dumbdecode.py) to a new file,
 and start hacking onto it.
+
+You may find the [example xmodem decoder](examples/xmodem.py) to be helpful!
+It illustrates a fair amount of what the library provides.

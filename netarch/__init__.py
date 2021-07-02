@@ -2,8 +2,9 @@
 
 import binascii
 import struct
+import sys
 from . import ip
-
+from .unpack import Unpacker
 
 
 def cstring(buf):
@@ -180,8 +181,10 @@ def _registry(encoding):
 
 codecs.register(_registry)
 
-def main(session, pcaps):
+def main(session, pcaps=None):
     s = None
+    if not pcaps:
+        pcaps = sys.argv[1:]
     reseq = ip.Dispatch(*pcaps)
     for _, d in reseq:
         srv, first, chunk = d
