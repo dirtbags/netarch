@@ -1,16 +1,17 @@
 #! /usr/bin/python3
 
 import struct
-import builtins
 
 _MAGIC = 0xA1B2C3D4
+
+builtin_open = open
 
 class PcapFile:
     def __init__(self, stream, mode='r', snaplen=65535, linktype=1):
         if 'b' not in mode:
             mode += 'b'
         try:
-            self.stream = builtins.open(stream, mode)
+            self.stream = builtin_open(stream, mode)
         except TypeError:
             self.stream = stream
         try:

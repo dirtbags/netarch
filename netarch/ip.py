@@ -12,7 +12,6 @@ import io
 try:
     import pcap
 except ImportError:
-    warnings.warn("Using slow pure-python pcap library")
     from . import py_pcap as pcap
 import os
 import cgi
@@ -307,7 +306,6 @@ class TCP_Resequence:
 
         self.handle = self.handle_handshake
 
-
     def bundle_pending(self, xdi, pkt, seq):
         """Bundle up any pending packets.
 
@@ -366,6 +364,8 @@ class TCP_Resequence:
 
         return (xdi, first, gs)
 
+    def handle(self, pkt):
+        """This method will be re-assigned to one of the handle_* methods below"""
 
     def handle_handshake(self, pkt):
         if not self.first:
@@ -405,6 +405,7 @@ class TCP_Resequence:
             self.closed = [True, True]
             self.handle = self.handle_drop
 
+            print(self.lastack)
             return self.bundle_pending(xdi, pkt, self.lastack[idx])
         else:
             # Stick it into pending

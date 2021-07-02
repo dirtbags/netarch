@@ -1,6 +1,7 @@
 #! /usr/bin/python3
 
 import netarch
+import sys
 
 class DumbPacket(netarch.Packet):
 	def parse(self, data):
@@ -9,4 +10,4 @@ class DumbPacket(netarch.Packet):
 class DumbSession(netarch.Session):
 	Packet = DumbPacket
 
-netarch.main(DumbSession)
+netarch.main(DumbSession, sys.argv[1:])

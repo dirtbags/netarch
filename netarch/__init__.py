@@ -1,7 +1,6 @@
 #! /usr/bin/python3
 
 import binascii
-import sys
 import struct
 from . import ip
 
@@ -181,9 +180,9 @@ def _registry(encoding):
 
 codecs.register(_registry)
 
-def main(session):
+def main(session, pcaps):
     s = None
-    reseq = ip.Dispatch(*sys.argv[1:])
+    reseq = ip.Dispatch(*pcaps)
     for _, d in reseq:
         srv, first, chunk = d
         if not s:
